@@ -13,9 +13,14 @@ El objetivo es implementar, entrenar y evaluar **perceptrones** (simples y multi
 
 ## Tecnología
 
-- **Lenguaje:** Python 3
+- **Lenguaje:** Python 3.10+
 - **Manejo de dependencias:** `requirements.txt` en raíz
+- **Librerías:**
+  - `numpy` — operaciones matriciales (requisito explícito del enunciado).
+  - `pandas` — carga y exploración de los CSVs (`transactions.csv`, `digits.csv`, `digits_test.csv`, `more_data_digits.csv`).
+  - `matplotlib` — gráficos (curvas de aprendizaje, ROC/PR, matrices de confusión).
 - **Configuración por ejercicio:** `config.yaml` dentro de cada carpeta `ejN/`
+- **Sin frameworks de deep learning** (PyTorch, TF): el TP exige implementar perceptrones y backpropagation desde cero.
 
 ## Estructura del repositorio
 
@@ -25,18 +30,25 @@ sia-tp3/
 ├── README.md           # Documentación pública del proyecto
 ├── requirements.txt    # Dependencias Python globales
 │
-├── context/            # Material teórico de apoyo
+├── context/            # Material teórico de apoyo (notas sobre las clases)
 │   ├── perceptron_simple.md
+│   ├── perceptron_lineal_no_lineal.md
 │   ├── perceptron_multicapa.md
-│   ├── funciones_activacion.md
-│   └── optimizacion.md
+│   ├── optimizacion.md
+│   └── metricas_sobreajuste.md
 │
 ├── shared/             # Código reutilizable entre ejercicios
 │   ├── __init__.py
-│   ├── perceptron.py       # Implementación base de perceptrón
-│   ├── mlp.py              # Multi-Layer Perceptron
-│   ├── activations.py      # Funciones de activación y derivadas
-│   ├── utils.py            # Helpers generales (loaders, métricas, plots)
+│   ├── perceptron.py       # Implementación base de perceptrón (escalón / lineal / no lineal)
+│   ├── mlp.py              # Multi-Layer Perceptron (forward + backprop)
+│   ├── activations.py      # Funciones de activación y derivadas (escalón, identidad, tanh, logística)
+│   ├── initializers.py     # Inicialización de pesos (random pequeño, Xavier, He)
+│   ├── optimizers.py       # GD, SGD, Momentum, Adam (interfaz común tipo `step(params, grads)`)
+│   ├── losses.py           # MSE (default); cross-entropy opcional para Ej2/3
+│   ├── metrics.py          # Accuracy, precision, recall, F1, AUC-ROC, AUC-PR, matriz de confusión
+│   ├── preprocessing.py    # Scalers (z-score, min-max), splits estratificados, one-hot
+│   ├── regularization.py   # L2 / weight decay, early stopping
+│   ├── utils.py            # Helpers generales (loaders CSV, logging, plots)
 │   └── config_loader.py    # Parser genérico de config.yaml
 │
 ├── ej1/                # Ejercicio 1
@@ -77,32 +89,54 @@ sia-tp3/
 
 ## Archivos de configuración (`config.yaml`)
 
-Ejemplo de estructura mínima esperada en cada ejercicio:
+Esquema sugerido por ejercicio. No todos los campos aplican a todos los ejercicios; los que no apliquen se omiten o se setean a `null`.
 
 ```yaml
 model:
-  type: "simple" | "mlp"
-  architecture: [2, 4, 1]        # capas (solo para mlp)
-  activation: "sigmoid" | "tanh" | "relu"
-  learning_rate: 0.01
-  epochs: 1000
-  epsilon: 0.01                  # criterio de corte por error
-  patience: 50                   # early stopping opcional
+  type: "simple_step" | "simple_linear" | "simple_nonlinear" | "mlp"
+  architecture: [n_in, h1, h2, ..., n_out]   # solo para mlp
+  activation: "step" | "identity" | "tanh" | "logistic" | "sigmoid" | "relu" 
+  beta: 1.0                       # pendiente sigmoidea (no lineal / mlp con tanh o logística)
+  initializer: "random_normal" | "xavier" | "he"
+  init_scale: 0.1                 # σ para random_normal
 
 training:
-  batch_size: 0                  # 0 = full-batch
-  optimizer: "sgd" | "adam"
+  optimizer: "gd" | "sgd" | "momentum" | "adam"
+  learning_rate: 0.01
+  batch_size: 32                  # 0 = full-batch, 1 = online
   shuffle: true
+  epochs: 1000
+  loss: "mse"                     # opcional: "cross_entropy" para Ej2/3
+  momentum: 0.9                   # solo si optimizer == momentum
+  adam_betas: [0.9, 0.999]        # solo si optimizer == adam
+  adam_eps: 1.0e-8                # solo si optimizer == adam
+  weight_decay: 0.0               # λ de regularización L2
+  early_stopping:
+    enabled: true
+    patience: 10
+    monitor: "val_loss"
+  stop_criteria:
+    epsilon: 0.01                 # corte por error (loss < epsilon)
+    grad_norm: null               # corte por norma del gradiente
 
 data:
   train_path: "data/train.csv"
   test_path: "data/test.csv"
-  normalize: true
+  preprocess:
+    feature_scaler: "z-score" | "min-max" | "none"
+    label_scaler: "none" | "min-max"
+  split:
+    val_frac: 0.2
+    stratify: true                # estratificar por la etiqueta (Ej1)
+    seed: 42
 
 experiment:
   name: "ej1_baseline"
+  seed: 42
   save_plots: true
+  log_every: 1                    # cada cuántas épocas loguear loss/métricas
   log_level: "INFO"
+  save_model: true                # guardar pesos + estado del optimizador + scaler
 ```
 
 ---
@@ -214,19 +248,22 @@ Estos ejercicios sirven **únicamente para validar** que las implementaciones de
 
 ## Hiperparámetros a experimentar
 
-A continuación se listan los hiperparámetros y variantes que se deben explorar. No es necesario probar todas las combinaciones, pero sí incluir las marcadas como obligatorias.
+No es necesario probar todas las combinaciones; sí incluir las marcadas como obligatorias del enunciado. Valores sugeridos a partir del material teórico:
 
-- **Cantidad de épocas**
-- **Tasa de aprendizaje**
-- **Arquitectura** (cantidad de capas, cantidad de nodos por capa) → **probar sí o sí**
-- **Pesos iniciales**
-- **Función de activación**
-- **Función de pérdida**
-- **Modo de entrenamiento**: Batch / Online / Mini-batch
-- **Beta** de la función de activación
-- **Algoritmos de optimización** → **mínimo 2**, se sugiere hacer **más de 2**
-  - **Obligatorios:** Gradiente Descendiente común y **Adam**
-  - **Sugerido:** **Momentum** (es fácil de implementar)
+| Hiperparámetro | Valores sugeridos | Aplica a | Obligatorio |
+|---|---|---|---|
+| Cantidad de épocas | 100, 500, 1000, 5000 | todos | sí |
+| Tasa de aprendizaje (η) | 1e-1, 1e-2, 1e-3, 1e-4 | todos | sí |
+| Arquitectura (capas, neuronas) | varía por ejercicio (ver §"Decisiones técnicas") | mlp | **sí** |
+| Inicialización de pesos | random N(0, σ²) con σ ∈ {0.01, 0.1}; Xavier; He | mlp / no lineal | sí |
+| Función de activación | escalón, identidad, tanh, logística | según ejercicio | sí |
+| Beta (β, pendiente sigmoidea) | 0.5, 1, 2 | sigmoideas | recomendado |
+| Función de pérdida | MSE; cross-entropy (opcional Ej2/3) | todos | MSE sí |
+| Modo de entrenamiento | online (1), minibatch (32, 64), batch | todos | sí |
+| Optimizador | GD, SGD, Momentum, Adam | todos | **GD y Adam sí**, Momentum recomendado |
+| Regularización L2 (λ) | 0, 1e-4, 1e-3 | mlp (sobre todo Ej3) | si overfittea |
+
+> **Adam (referencia):** β₁=0.9, β₂=0.999, ε=1e-8, α=1e-3 como punto de partida (ver §"Decisiones técnicas" para detalles, incluida la corrección de bias).
 
 ---
 
