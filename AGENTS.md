@@ -267,6 +267,15 @@ No es necesario probar todas las combinaciones; sí incluir las marcadas como ob
 
 ---
 
+## Estándares de visualización para informes
+
+Todo gráfico de resultados destinado al informe técnico debe incluir **barras de error**. Esto aplica a cualquier comparación de métricas entre configuraciones (learning rate, arquitectura, optimizador, etc.).
+
+- **Qué reportar:** media ± desviación estándar sobre múltiples semillas (mínimo 3, idealmente 5).
+- **Cómo obtenerlo:** correr el mismo experimento con `seed: [0, 1, 2, 3, 4]` y agregar los resultados.
+- **Qué métrica graficar con error bars:** MSE final, F1, accuracy, AUC-PR, u otras métricas de evaluación. Las curvas de aprendizaje pueden mostrarse con una banda sombreada (mean ± std por época).
+- **Por qué:** sin barras de error no se puede distinguir si una diferencia entre dos configuraciones es real o producto de la inicialización aleatoria.
+
 ## Recomendaciones del enunciado
 
 - **Operaciones matriciales** para mejorar la performance.
