@@ -1,0 +1,39 @@
+model:
+  type: "simple_nonlinear"
+  activation: "logistic"   # "identity" | "logistic" | "tanh"
+  beta: 1.0                # sigmoid steepness
+  initializer: "random_normal"
+  init_scale: 0.1
+
+training:
+  optimizer: "adam"        # "gd" | "sgd" | "momentum" | "adam"
+  learning_rate: 0.001
+  batch_size: 32           # 0 = full-batch, 1 = online
+  shuffle: true
+  epochs: 500
+  momentum: 0.9            # only used when optimizer == "momentum"
+  adam_betas: [0.9, 0.999]
+  adam_eps: 1.0e-8
+  weight_decay: 0.0        # L2 regularization lambda
+  early_stopping:
+    enabled: true
+    patience: 30
+
+data:
+  dataset_path: "data/fraud_dataset.csv"
+  target_col: "big_model_fraud_probability"
+  label_col: "flagged_fraud"
+  preprocess:
+    feature_scaler: "z-score"   # "z-score" | "min-max" | "none"
+  split:
+    val_frac: 0.15
+    test_frac: 0.15
+    stratify: true
+    seed: 42
+
+experiment:
+  name: "ej1_fraud"
+  seed: 42
+  save_plots: true
+  log_every: 50
+  results_dir: "results"
