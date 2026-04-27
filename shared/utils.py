@@ -12,58 +12,112 @@ def save_fig(fig, path):
     plt.close(fig)
 
 
-def plot_learning_curves(epoch_train, val_losses=None, step_train=None,
-                         title="Learning Curve", path=None):
-    """Two panels: left = per-step train loss (noisy), right = per-epoch avg + val."""
-    fig, axes = plt.subplots(1, 2, figsize=(14, 4))
+def _to_runs(data):
+    """Normalize a single run (list of floats) or multiple runs (list of lists) to a 2D array.
+    Shorter runs are padded with their last value."""
+    if data is None:
+        return None
+    if isinstance(data[0], (int, float, np.floating, np.integer)):
+        data = [data]
+    max_len = max(len(r) for r in data)
+    padded = [list(r) + [r[-1]] * (max_len - len(r)) for r in data]
+    return np.array(padded, dtype=float)
 
-    # Left: per-step train — shows real variation
-    ax = axes[0]
-    if step_train:
-        ax.plot(step_train, color="steelblue", alpha=0.6, linewidth=0.6, label="Train MSE (por step)")
-    ax.set_xlabel("Step (mini-batch)")
-    ax.set_ylabel("MSE")
-    ax.set_title(f"{title}\nTrain por step")
-    ax.legend()
 
-    # Right: per-epoch average train + val — shows convergence trend
-    ax = axes[1]
-    ax.plot(epoch_train, label="Train MSE (promedio época)")
-    if val_losses is not None:
-        ax.plot(val_losses, label="Val MSE")
+def plot_learning_curves(epoch_train, val_losses=None, title="Learning Curve", path=None):
+    """Plot per-epoch MSE with optional mean ± std bands when multiple seeds are provided.
+
+    epoch_train: list of floats (single run) or list of lists (one per seed)
+    val_losses:  same, optional
+    """
+    train_arr = _to_runs(epoch_train)
+    val_arr = _to_runs(val_losses)
+    epochs = np.arange(1, train_arr.shape[1] + 1)
+
+    fig, ax = plt.subplots(figsize=(9, 5))
+
+    train_mean = train_arr.mean(axis=0)
+    train_std = train_arr.std(axis=0)
+    ax.plot(epochs, train_mean, label="Train MSE", color="steelblue")
+    if train_arr.shape[0] > 1:
+        ax.fill_between(epochs, train_mean - train_std, train_mean + train_std,
+                        alpha=0.2, color="steelblue")
+
+    if val_arr is not None:
+        val_mean = val_arr.mean(axis=0)
+        val_std = val_arr.std(axis=0)
+        ax.plot(epochs, val_mean, label="Val MSE", color="tomato")
+        if val_arr.shape[0] > 1:
+            ax.fill_between(epochs, val_mean - val_std, val_mean + val_std,
+                            alpha=0.2, color="tomato")
+
     ax.set_xlabel("Época")
     ax.set_ylabel("MSE")
-    ax.set_title(f"{title}\nPromedio por época")
+    ax.set_title(title)
     ax.legend()
-
     fig.tight_layout()
     if path:
         save_fig(fig, path)
     return fig
 
 
-def plot_multi_learning_curves(epoch_curves, step_curves=None, title="Learning Curves", path=None):
-    """epoch_curves: {label: epoch_losses}. step_curves: {label: step_losses}."""
-    fig, axes = plt.subplots(1, 2, figsize=(14, 4))
+def plot_multi_learning_curves(epoch_curves_runs, title="Learning Curves", path=None):
+    """Two panels: learning curves with bands (left) + final MSE bar chart with
+    error bars (right).  The bar chart makes seed variance visible even when the
+    shaded bands are too narrow to see on the full curve scale.
 
-    # Left: per-step — shows real variation
+    epoch_curves_runs: {label: runs} where runs is a list of floats (single seed)
+                       or a list of lists (multiple seeds).
+    """
+    colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+    multi_seed = any(
+        not isinstance(runs[0], (int, float, np.floating, np.integer))
+        for runs in epoch_curves_runs.values()
+    )
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5),
+                             gridspec_kw={"width_ratios": [3, 1]})
+
+    # Left — learning curves with shaded bands
     ax = axes[0]
-    if step_curves:
-        for label, losses in step_curves.items():
-            ax.plot(losses, alpha=0.6, linewidth=0.6, label=label)
-    ax.set_xlabel("Step (mini-batch)")
-    ax.set_ylabel("MSE")
-    ax.set_title(f"{title}\nPor step")
-    ax.legend()
+    finals = {}
+    for i, (label, runs) in enumerate(epoch_curves_runs.items()):
+        arr = _to_runs(runs)
+        epochs = np.arange(1, arr.shape[1] + 1)
+        mean = arr.mean(axis=0)
+        std = arr.std(axis=0)
+        color = colors[i % len(colors)]
+        ax.plot(epochs, mean, label=label, color=color)
+        if arr.shape[0] > 1:
+            ax.fill_between(epochs, mean - std, mean + std, alpha=0.2, color=color)
+        finals[label] = (arr[:, -1].mean(), arr[:, -1].std(), color)
 
-    # Right: per-epoch average — shows convergence trend
-    ax = axes[1]
-    for label, losses in epoch_curves.items():
-        ax.plot(losses, label=label)
     ax.set_xlabel("Época")
     ax.set_ylabel("MSE")
-    ax.set_title(f"{title}\nPromedio por época")
+    ax.set_title(f"{title}\nCurvas de aprendizaje (media ± std)")
     ax.legend()
+
+    # Right — bar chart of final MSE ± std
+    ax = axes[1]
+    labels = list(finals.keys())
+    means  = [finals[l][0] for l in labels]
+    stds   = [finals[l][1] for l in labels]
+    bar_colors = [finals[l][2] for l in labels]
+    x = np.arange(len(labels))
+    bars = ax.bar(x, means, yerr=stds if multi_seed else None,
+                  color=bar_colors, alpha=0.7, capsize=8, error_kw={"linewidth": 2})
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, rotation=15, ha="right", fontsize=9)
+    ax.set_ylabel("MSE final")
+    ax.set_title("MSE final ± std")
+    # Annotate bars with exact values
+    for bar, mean, std in zip(bars, means, stds):
+        label_txt = f"{mean:.5f}" + (f"\n±{std:.5f}" if multi_seed else "")
+        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + (max(stds) if multi_seed else 0),
+                label_txt, ha="center", va="bottom", fontsize=8)
+    # Zoom y-axis to the relevant range
+    margin = max(stds) * 5 if multi_seed and max(stds) > 0 else max(means) * 0.05
+    ax.set_ylim(max(0, min(means) - margin * 3), max(means) + margin * 8)
 
     fig.tight_layout()
     if path:

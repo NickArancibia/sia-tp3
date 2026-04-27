@@ -67,213 +67,226 @@ def load_data(cfg):
 # Parte 1 — Análisis de aprendizaje (lineal vs no lineal, todos los datos)
 # ---------------------------------------------------------------------------
 
-def run_part1(X, t, cfg, rng, results_dir):
+def run_part1(X, t, cfg, results_dir):
     print("\n" + "=" * 60)
     print("PARTE 1 — Análisis de aprendizaje (todos los datos)")
     print("=" * 60)
 
-    scaler = build_scaler(cfg["data"]["preprocess"]["feature_scaler"])
-    X_scaled = scaler.fit_transform(X) if scaler else X.copy()
-
+    seeds = cfg["experiment"].get("seeds", [cfg["experiment"]["seed"]])
     epochs = cfg["training"]["epochs"]
     batch_size = cfg["training"].get("batch_size", 32)
     shuffle = cfg["training"].get("shuffle", True)
-    log_every = cfg["experiment"].get("log_every", 50)
     beta = cfg["model"].get("beta", 1.0)
     init_scale = cfg["model"].get("init_scale", 0.1)
     initializer = cfg["model"].get("initializer", "random_normal")
-    seed = cfg["experiment"]["seed"]
 
-    curves = {}
-    step_curves = {}
+    # Scaler fit on all data (no randomness here)
+    scaler = build_scaler(cfg["data"]["preprocess"]["feature_scaler"])
+    X_scaled = scaler.fit_transform(X) if scaler else X.copy()
 
-    for activation, label in [("identity", "Lineal (identidad)"),
-                               (cfg["model"]["activation"],
-                                f"No Lineal ({cfg['model']['activation']})")]:
-        print(f"\n--- Perceptrón {label} ---")
-        opt = build_optimizer(cfg["training"])
-        p = SimplePerceptron(
-            n_inputs=X_scaled.shape[1],
-            activation=activation,
-            beta=beta,
-            initializer=initializer,
-            init_scale=init_scale,
-            seed=seed,
-            weight_decay=cfg["training"].get("weight_decay", 0.0),
-        )
+    model_specs = [
+        ("identity", "Lineal (identidad)"),
+        (cfg["model"]["activation"], f"No Lineal ({cfg['model']['activation']})"),
+    ]
 
-        epoch_losses = []
-        step_losses = []
-        for epoch in range(1, epochs + 1):
-            epoch_loss, batch_losses = p.train_epoch(X_scaled, t, opt,
-                                                     batch_size=batch_size,
-                                                     shuffle=shuffle, rng=rng)
-            epoch_losses.append(epoch_loss)
-            step_losses.extend(batch_losses)
-            if epoch % log_every == 0:
-                print(f"  Época {epoch:5d} | MSE: {epoch_loss:.6f}")
+    # all_runs[label] = list of epoch_losses arrays, one per seed
+    all_runs = {label: [] for _, label in model_specs}
 
-        print(f"  MSE final: {epoch_losses[-1]:.6f}")
-        curves[label] = epoch_losses
-        step_curves[label] = step_losses
+    for activation, label in model_specs:
+        print(f"\n--- Perceptrón {label} ({len(seeds)} seeds) ---")
+        for seed in seeds:
+            rng_s = np.random.default_rng(seed)
+            opt = build_optimizer(cfg["training"])
+            p = SimplePerceptron(
+                n_inputs=X_scaled.shape[1],
+                activation=activation,
+                beta=beta,
+                initializer=initializer,
+                init_scale=init_scale,
+                seed=seed,
+                weight_decay=cfg["training"].get("weight_decay", 0.0),
+            )
+            epoch_losses = []
+            for epoch in range(1, epochs + 1):
+                loss, _ = p.train_epoch(X_scaled, t, opt,
+                                        batch_size=batch_size,
+                                        shuffle=shuffle, rng=rng_s)
+                epoch_losses.append(loss)
+            all_runs[label].append(epoch_losses)
+            print(f"  seed={seed} | MSE final: {epoch_losses[-1]:.6f}")
+
+        finals = [runs[-1] for runs in all_runs[label]]
+        print(f"  → media ± std: {np.mean(finals):.6f} ± {np.std(finals):.6f}")
 
     utils.plot_multi_learning_curves(
-        curves, step_curves,
-        title="Parte 1 — Lineal vs No Lineal (todos los datos)",
+        all_runs,
+        title=f"Parte 1 — Lineal vs No Lineal ({len(seeds)} seeds, media ± std)",
         path=os.path.join(results_dir, "part1_learning_curves.png"),
     )
     print(f"\n[Gráfico guardado en results/part1_learning_curves.png]")
 
-    linear_final = curves["Lineal (identidad)"][-1]
-    nl_key = f"No Lineal ({cfg['model']['activation']})"
-    nonlin_final = curves[nl_key][-1]
-    print(f"\nResumen Parte 1:")
-    print(f"  MSE final Lineal:     {linear_final:.6f}")
-    print(f"  MSE final No Lineal:  {nonlin_final:.6f}")
-    print(f"  Diferencia:           {linear_final - nonlin_final:.6f}")
+    print("\nResumen Parte 1:")
+    for _, label in model_specs:
+        finals = [runs[-1] for runs in all_runs[label]]
+        print(f"  {label}: MSE = {np.mean(finals):.6f} ± {np.std(finals):.6f}")
 
 
 # ---------------------------------------------------------------------------
 # Parte 2 — Generalización con split estratificado
 # ---------------------------------------------------------------------------
 
-def _make_perceptron(cfg, n_inputs):
+def _make_perceptron(cfg, n_inputs, seed):
     return SimplePerceptron(
         n_inputs=n_inputs,
         activation=cfg["model"]["activation"],
         beta=cfg["model"].get("beta", 1.0),
         initializer=cfg["model"].get("initializer", "random_normal"),
         init_scale=cfg["model"].get("init_scale", 0.1),
-        seed=cfg["experiment"]["seed"],
+        seed=seed,
         weight_decay=cfg["training"].get("weight_decay", 0.0),
     )
 
 
-def run_part2(X, t, y, cfg, rng, results_dir):
+def run_part2(X, t, y, cfg, results_dir):
     print("\n" + "=" * 60)
     print("PARTE 2 — Generalización")
     print("=" * 60)
 
+    seeds = cfg["experiment"].get("seeds", [cfg["experiment"]["seed"]])
     split_cfg = cfg["data"]["split"]
     val_frac = split_cfg.get("val_frac", 0.15)
     test_frac = split_cfg.get("test_frac", 0.15)
-    seed = split_cfg.get("seed", 42)
-
-    # Stratified split using hard labels (fraud class is imbalanced)
-    train_idx, val_idx, test_idx = stratified_split(y, val_frac, test_frac, seed)
-
-    X_train, X_val, X_test = X[train_idx], X[val_idx], X[test_idx]
-    t_train, t_val, t_test = t[train_idx], t[val_idx], t[test_idx]
-    y_train, y_val, y_test = y[train_idx], y[val_idx], y[test_idx]
-
-    print(f"Split: Train={len(train_idx)} | Val={len(val_idx)} | Test={len(test_idx)}")
-    print(f"Tasa de fraude — Train: {y_train.mean():.4f} | "
-          f"Val: {y_val.mean():.4f} | Test: {y_test.mean():.4f}")
-
-    # Fit scaler on TRAIN only
-    scaler = build_scaler(cfg["data"]["preprocess"]["feature_scaler"])
-    if scaler:
-        X_train = scaler.fit_transform(X_train)
-        X_val = scaler.transform(X_val)
-        X_test = scaler.transform(X_test)
-
-    # Build model and optimizer
-    opt = build_optimizer(cfg["training"])
-    p = _make_perceptron(cfg, X_train.shape[1])
-
-    es_cfg = cfg["training"].get("early_stopping", {})
-    early_stopping = None
-    if es_cfg.get("enabled", False):
-        early_stopping = EarlyStopping(patience=es_cfg.get("patience", 30))
-
     epochs = cfg["training"]["epochs"]
     batch_size = cfg["training"].get("batch_size", 32)
     shuffle = cfg["training"].get("shuffle", True)
-    log_every = cfg["experiment"].get("log_every", 50)
+    es_cfg = cfg["training"].get("early_stopping", {})
 
-    epoch_train_losses, val_losses, step_train_losses = [], [], []
-    print(f"\nEntrenando {epochs} épocas (optimizer={cfg['training']['optimizer']}, "
+    print(f"Entrenando {len(seeds)} seeds "
+          f"(optimizer={cfg['training']['optimizer']}, "
           f"lr={cfg['training']['learning_rate']}, batch={batch_size})...")
 
-    for epoch in range(1, epochs + 1):
-        train_loss, batch_losses = p.train_epoch(X_train, t_train, opt,
-                                                 batch_size=batch_size,
-                                                 shuffle=shuffle, rng=rng)
-        val_preds = p.predict(X_val)
-        val_loss = mse(t_val, val_preds)
+    all_train_losses = []   # list of epoch_losses per seed
+    all_val_losses = []
+    all_metrics = []        # list of dicts per seed
+    # For the representative confusion matrix and threshold plot we keep the
+    # seed whose F1 is closest to the mean.
+    seed_test_data = []     # (y_test, test_scores, best_t) per seed
 
-        epoch_train_losses.append(train_loss)
-        val_losses.append(val_loss)
-        step_train_losses.extend(batch_losses)
+    for seed in seeds:
+        rng_s = np.random.default_rng(seed)
 
-        if epoch % log_every == 0:
-            print(f"  Época {epoch:5d} | Train MSE: {train_loss:.6f} | Val MSE: {val_loss:.6f}")
+        # Each seed gets its own split (varies both init and data order)
+        train_idx, val_idx, test_idx = stratified_split(y, val_frac, test_frac, seed)
+        X_train, X_val, X_test = X[train_idx], X[val_idx], X[test_idx]
+        t_train, t_val, t_test = t[train_idx], t[val_idx], t[test_idx]
+        y_train, y_val, y_test = y[train_idx], y[val_idx], y[test_idx]
 
-        if early_stopping is not None and early_stopping(val_loss, p.w):
-            print(f"  Early stopping en época {epoch} (mejor val MSE: {early_stopping._best:.6f})")
-            p.w = early_stopping.best_weights
-            break
+        scaler = build_scaler(cfg["data"]["preprocess"]["feature_scaler"])
+        if scaler:
+            X_train = scaler.fit_transform(X_train)
+            X_val   = scaler.transform(X_val)
+            X_test  = scaler.transform(X_test)
 
+        opt = build_optimizer(cfg["training"])
+        p = _make_perceptron(cfg, X_train.shape[1], seed)
+
+        early_stopping = None
+        if es_cfg.get("enabled", False):
+            early_stopping = EarlyStopping(patience=es_cfg.get("patience", 30))
+
+        epoch_train_losses, val_losses = [], []
+        stopped_at = epochs
+        for epoch in range(1, epochs + 1):
+            train_loss, _ = p.train_epoch(X_train, t_train, opt,
+                                          batch_size=batch_size,
+                                          shuffle=shuffle, rng=rng_s)
+            val_preds = p.predict(X_val)
+            val_loss = mse(t_val, val_preds)
+            epoch_train_losses.append(train_loss)
+            val_losses.append(val_loss)
+
+            if early_stopping is not None and early_stopping(val_loss, p.w):
+                p.w = early_stopping.best_weights
+                stopped_at = epoch
+                break
+
+        all_train_losses.append(epoch_train_losses)
+        all_val_losses.append(val_losses)
+
+        # Threshold on val → metrics on test
+        val_scores  = p.predict(X_val)
+        test_scores = p.predict(X_test)
+        _, _, _, _, best_t = threshold_sweep(y_val, val_scores)
+        y_pred = (test_scores >= best_t).astype(int)
+
+        fpr, tpr = roc_curve(y_test, test_scores)
+        auc_roc = auc(fpr, tpr)
+        precs, recs = pr_curve(y_test, test_scores)
+        auc_pr = auc(recs, precs)
+        precision, recall, f1 = precision_recall_f1(y_test, y_pred)
+
+        all_metrics.append(dict(auc_roc=auc_roc, auc_pr=auc_pr,
+                                precision=precision, recall=recall,
+                                f1=f1, threshold=best_t))
+        seed_test_data.append((y_test, test_scores, best_t))
+
+        es_info = f" (early stop é.{stopped_at})" if stopped_at < epochs else ""
+        print(f"  seed={seed}{es_info} | "
+              f"train MSE={epoch_train_losses[-1]:.5f} val MSE={val_losses[-1]:.5f} | "
+              f"F1={f1:.4f} AUC-ROC={auc_roc:.4f}")
+
+    # --- Plots with bands ---
     utils.plot_learning_curves(
-        epoch_train_losses, val_losses, step_train_losses,
-        title="Parte 2 — Curvas de aprendizaje",
+        all_train_losses, all_val_losses,
+        title=f"Parte 2 — Curvas de aprendizaje ({len(seeds)} seeds, media ± std)",
         path=os.path.join(results_dir, "part2_learning_curves.png"),
     )
     print(f"\n[Gráfico guardado en results/part2_learning_curves.png]")
 
-    # -----------------------------------------------------------------
-    # Threshold selection on VAL set → evaluation on TEST set
-    # -----------------------------------------------------------------
-    val_scores = p.predict(X_val)
-    test_scores = p.predict(X_test)
+    # --- Representative run (F1 closest to mean) for ROC / PR / threshold / CM ---
+    mean_f1 = np.mean([m["f1"] for m in all_metrics])
+    rep_idx = int(np.argmin([abs(m["f1"] - mean_f1) for m in all_metrics]))
+    y_test_rep, test_scores_rep, best_t_rep = seed_test_data[rep_idx]
 
-    _, _, _, _, best_t = threshold_sweep(y_val, val_scores)
-    print(f"\nUmbral óptimo (F1 en val): {best_t:.4f}")
-
-    # ROC — test
-    fpr, tpr = roc_curve(y_test, test_scores)
-    auc_roc = auc(fpr, tpr)
-    utils.plot_roc(fpr, tpr, auc_roc,
+    fpr, tpr = roc_curve(y_test_rep, test_scores_rep)
+    auc_roc_rep = auc(fpr, tpr)
+    utils.plot_roc(fpr, tpr, auc_roc_rep,
                    path=os.path.join(results_dir, "part2_roc.png"))
 
-    # PR — test
-    precs, recs = pr_curve(y_test, test_scores)
-    auc_pr = auc(recs, precs)
-    utils.plot_pr(precs, recs, auc_pr,
+    precs, recs = pr_curve(y_test_rep, test_scores_rep)
+    auc_pr_rep = auc(recs, precs)
+    utils.plot_pr(precs, recs, auc_pr_rep,
                   path=os.path.join(results_dir, "part2_pr.png"))
 
-    # Threshold sweep — test (for visualization)
-    th, th_precs, th_recs, th_f1s, _ = threshold_sweep(y_test, test_scores)
-    utils.plot_threshold_sweep(th, th_precs, th_recs, th_f1s, best_t,
+    th, th_precs, th_recs, th_f1s, _ = threshold_sweep(y_test_rep, test_scores_rep)
+    utils.plot_threshold_sweep(th, th_precs, th_recs, th_f1s, best_t_rep,
                                path=os.path.join(results_dir, "part2_threshold_sweep.png"))
 
-    # Final metrics at best threshold on TEST
-    y_pred = (test_scores >= best_t).astype(int)
-    precision, recall, f1 = precision_recall_f1(y_test, y_pred)
-    cm = confusion_matrix(y_test, y_pred)
+    y_pred_rep = (test_scores_rep >= best_t_rep).astype(int)
+    cm = confusion_matrix(y_test_rep, y_pred_rep)
     utils.plot_confusion_matrix(cm,
                                 path=os.path.join(results_dir, "part2_confusion_matrix.png"))
 
-    print("\n--- Métricas en TEST ---")
-    print(f"  AUC-ROC:   {auc_roc:.4f}")
-    print(f"  AUC-PR:    {auc_pr:.4f}")
-    print(f"  Precision: {precision:.4f}")
-    print(f"  Recall:    {recall:.4f}")
-    print(f"  F1:        {f1:.4f}")
-    print(f"\n  Matriz de confusión (umbral = {best_t:.4f}):")
-    print(f"    TN={cm[0,0]:5d}  FP={cm[0,1]:5d}")
-    print(f"    FN={cm[1,0]:5d}  TP={cm[1,1]:5d}")
+    # --- Summary ---
+    print("\n--- Métricas en TEST (media ± std sobre seeds) ---")
+    for key in ("auc_roc", "auc_pr", "precision", "recall", "f1", "threshold"):
+        vals = [m[key] for m in all_metrics]
+        print(f"  {key:12s}: {np.mean(vals):.4f} ± {np.std(vals):.4f}")
+
+    mean_t = np.mean([m["threshold"] for m in all_metrics])
+    mean_rec = np.mean([m["recall"] for m in all_metrics])
+    mean_prec = np.mean([m["precision"] for m in all_metrics])
+    mean_f1 = np.mean([m["f1"] for m in all_metrics])
 
     print("\n" + "=" * 60)
     print("RECOMENDACIÓN AL CLIENTE")
     print("=" * 60)
     print(f"  Modelo:   Perceptrón {cfg['model']['activation']} "
           f"(β={cfg['model'].get('beta', 1.0)})")
-    print(f"  Features: {X_train.shape[1]} variables de transacción")
-    print(f"  Umbral recomendado: {best_t:.4f}")
-    print(f"    → Detecta el {recall*100:.1f}% de los fraudes reales (Recall)")
-    print(f"    → {precision*100:.1f}% de las alertas son fraude real (Precision)")
-    print(f"    → F1 = {f1:.4f}")
+    print(f"  Umbral recomendado (media sobre {len(seeds)} seeds): {mean_t:.4f}")
+    print(f"    → Detecta el {mean_rec*100:.1f}% de los fraudes reales (Recall)")
+    print(f"    → {mean_prec*100:.1f}% de las alertas son fraude real (Precision)")
+    print(f"    → F1 = {mean_f1:.4f}")
     print()
     print("  Nota: reducir el umbral aumenta Recall (detecta más fraudes)")
     print("        pero baja Precision (más falsas alarmas).")
@@ -288,11 +301,10 @@ if __name__ == "__main__":
     base = os.path.dirname(os.path.abspath(__file__))
     cfg = load_config(os.path.join(base, "config.yaml"))
 
-    rng = np.random.default_rng(cfg["experiment"]["seed"])
     results_dir = os.path.join(base, cfg["experiment"]["results_dir"])
     os.makedirs(results_dir, exist_ok=True)
 
     X, t, y, feature_cols = load_data(cfg)
 
-    run_part1(X, t, cfg, rng, results_dir)
-    run_part2(X, t, y, cfg, rng, results_dir)
+    run_part1(X, t, cfg, results_dir)
+    run_part2(X, t, y, cfg, results_dir)
