@@ -39,9 +39,15 @@ def roc_curve(y_true, y_scores):
 
 
 def pr_curve(y_true, y_scores):
-    """Returns (precisions, recalls) sorted by descending threshold."""
+    """Returns (precisions, recalls) sorted by descending threshold.
+
+    Includes the τ=+∞ extreme (R=0, P=1) at the start — by convention
+    precision is 1 when no positives are predicted (0/0). The τ=−∞ extreme
+    (R=1, P=base_rate) is already captured naturally when t = min(scores),
+    since (scores >= t) is all-True there.
+    """
     thresholds = np.sort(np.unique(y_scores))[::-1]
-    precisions, recalls = [], []
+    precisions, recalls = [1.0], [0.0]  # τ=+∞ extreme
     for t in thresholds:
         pred = (y_scores >= t).astype(int)
         p, r, _ = precision_recall_f1(y_true, pred)
@@ -51,6 +57,12 @@ def pr_curve(y_true, y_scores):
 
 
 def auc(x, y):
+    # TODO(A1): AUC-PR via trapezoid is not the standard definition. The PR
+    # curve is non-monotonic in precision so trapezoid + argsort can over- or
+    # under-estimate the area. The defensible alternative is the
+    # average-precision step formula:  AP = Σ (R_i − R_{i−1}) · P_i  ordered
+    # by ascending recall. Replace this `auc(recs, precs)` call site once we
+    # ship a dedicated `average_precision(...)` helper.
     order = np.argsort(x)
     return float(np.trapezoid(y[order], x[order]))
 
