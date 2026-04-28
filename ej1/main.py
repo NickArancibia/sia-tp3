@@ -205,8 +205,8 @@ def run_part2(X, t, y, cfg, results_dir):
             epoch_train_losses.append(train_loss)
             val_losses.append(val_loss)
 
-            if early_stopping is not None and early_stopping(val_loss, p.w):
-                p.w = early_stopping.best_weights
+            if early_stopping is not None and early_stopping(val_loss, p.get_params()):
+                p.set_params(early_stopping.best_params)
                 stopped_at = epoch
                 break
 
