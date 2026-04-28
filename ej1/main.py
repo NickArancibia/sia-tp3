@@ -278,6 +278,12 @@ def run_part2(X, t, y, cfg, results_dir):
     mean_prec = np.mean([m["precision"] for m in all_metrics])
     mean_f1 = np.mean([m["f1"] for m in all_metrics])
 
+    # NOTA: reportamos un solo umbral (F1-óptimo). En fraude, costo(FN) y
+    # costo(FP) son asimétricos (fraude no detectado = pérdida directa; alerta
+    # sobre txn legítima = fricción/step-up), por lo que F1 — que los pesa
+    # igual — no es necesariamente el umbral que CompanyX preferiría. Mejora
+    # pendiente: reportar 3 perfiles {F1-óptimo, recall alto (≥0.95),
+    # precision alta (≥0.90)} y dejar la decisión final al cliente.
     print("\n" + "=" * 60)
     print("RECOMENDACIÓN AL CLIENTE")
     print("=" * 60)
