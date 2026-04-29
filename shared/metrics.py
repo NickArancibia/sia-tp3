@@ -10,6 +10,28 @@ def confusion_matrix(y_true, y_pred):
     return np.array([[tn, fp], [fn, tp]])
 
 
+def confusion_matrix_multiclass(y_true, y_pred, n_classes=None):
+    """Return n_classes x n_classes confusion matrix.
+
+    cm[i, j] = number of samples with true class i predicted as class j.
+    """
+    y_true = np.asarray(y_true, dtype=int)
+    y_pred = np.asarray(y_pred, dtype=int)
+    if n_classes is None:
+        n_classes = max(y_true.max(), y_pred.max()) + 1
+    cm = np.zeros((n_classes, n_classes), dtype=int)
+    for t, p in zip(y_true, y_pred):
+        cm[t, p] += 1
+    return cm
+
+
+def accuracy(y_true, y_pred):
+    """Fraction of correct predictions."""
+    y_true = np.asarray(y_true)
+    y_pred = np.asarray(y_pred)
+    return float(np.mean(y_true == y_pred))
+
+
 def precision_recall_f1(y_true, y_pred):
     tp = np.sum((y_pred == 1) & (y_true == 1))
     fp = np.sum((y_pred == 1) & (y_true == 0))
@@ -19,6 +41,51 @@ def precision_recall_f1(y_true, y_pred):
     f1 = (2 * precision * recall / (precision + recall)
           if (precision + recall) > 0 else 0.0)
     return float(precision), float(recall), float(f1)
+
+
+def per_class_metrics(cm):
+    """Compute per-class precision, recall, F1 from confusion matrix.
+
+    cm: (C, C) confusion matrix
+    Returns: dict with keys 'precision', 'recall', 'f1', each an array of length C
+    """
+    n_classes = cm.shape[0]
+    precision = np.zeros(n_classes)
+    recall = np.zeros(n_classes)
+    f1 = np.zeros(n_classes)
+    for c in range(n_classes):
+        tp = cm[c, c]
+        fp = cm[:, c].sum() - tp
+        fn = cm[c, :].sum() - tp
+        precision[c] = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+        recall[c] = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+        f1[c] = (2 * precision[c] * recall[c] / (precision[c] + recall[c])
+                 if (precision[c] + recall[c]) > 0 else 0.0)
+    return {
+        "precision": precision,
+        "recall": recall,
+        "f1": f1,
+        "macro_precision": float(precision.mean()),
+        "macro_recall": float(recall.mean()),
+        "macro_f1": float(f1.mean()),
+        "weighted_precision": float(
+            np.average(precision, weights=cm.sum(axis=1))
+            if cm.sum() > 0 else 0.0
+        ),
+        "weighted_recall": float(
+            np.average(recall, weights=cm.sum(axis=1))
+            if cm.sum() > 0 else 0.0
+        ),
+        "weighted_f1": float(
+            np.average(f1, weights=cm.sum(axis=1))
+            if cm.sum() > 0 else 0.0
+        ),
+    }
+
+
+def classify_from_output(output):
+    """Convert MLP output (probabilities or scores) to class labels via argmax."""
+    return np.argmax(output, axis=1)
 
 
 def roc_curve(y_true, y_scores):
@@ -41,7 +108,7 @@ def roc_curve(y_true, y_scores):
 def pr_curve(y_true, y_scores):
     """Returns (precisions, recalls) sorted by descending threshold."""
     thresholds = np.sort(np.unique(y_scores))[::-1]
-    precisions, recalls = [], []
+    precisions, recalls = [1.0], [0.0]
     for t in thresholds:
         pred = (y_scores >= t).astype(int)
         p, r, _ = precision_recall_f1(y_true, pred)
@@ -52,16 +119,11 @@ def pr_curve(y_true, y_scores):
 
 def auc(x, y):
     order = np.argsort(x)
-    return float(np.trapz(y[order], x[order]))
+    return float(np.trapezoid(y[order], x[order]))
 
 
 def threshold_sweep(y_true, y_scores, n_points=300):
-    """Compute precision/recall/F1 over a grid of thresholds.
-
-    Returns (thresholds, precisions, recalls, f1s, best_threshold).
-    best_threshold maximises F1.
-    """
-    # Combine unique predicted values with a linspace for smooth coverage
+    """Compute precision/recall/F1 over a grid of thresholds."""
     unique = np.sort(np.unique(y_scores))
     linspace = np.linspace(float(y_scores.min()), float(y_scores.max()), n_points)
     thresholds = np.sort(np.unique(np.concatenate([unique, linspace])))

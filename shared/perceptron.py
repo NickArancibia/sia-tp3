@@ -1,14 +1,20 @@
 import numpy as np
 
 from shared.activations import activate, activate_deriv
-from shared.initializers import initialize_weights
+from shared.initializers import initialize_layer
 from shared.losses import mse
 
 
 class SimplePerceptron:
     """Simple perceptron supporting identity (linear) and sigmoid/tanh (non-linear) activations.
 
-    Weight vector layout: w[0] = bias, w[1:] = feature weights.
+    Weights and bias are stored as separate attributes:
+      self.W : ndarray of shape (n_inputs,)
+      self.b : float
+
+    This generalises naturally to MLP, where each layer keeps its own W matrix
+    and b vector; optimizers and regularisation only need to know "the parameters
+    are a list of tensors", not "the bias lives in slot 0 of a flat vector".
     """
 
     def __init__(
@@ -21,15 +27,16 @@ class SimplePerceptron:
         seed=42,
         weight_decay=0.0,
     ):
-        self.w = initialize_weights(n_inputs, n_out=1,
-                                    method=initializer, scale=init_scale, seed=seed)
+        self.W, self.b = initialize_layer(
+            n_inputs, n_out=1, method=initializer, scale=init_scale, seed=seed
+        )
         self.activation = activation
         self.beta = beta
         self.weight_decay = weight_decay
 
     def _forward(self, X):
         """X: (N, n_features). Returns (O, h)."""
-        h = self.pre_activation(X)
+        h = X @ self.W + self.b
         O = activate(h, self.activation, self.beta)
         return O, h
 
@@ -39,6 +46,13 @@ class SimplePerceptron:
     def predict(self, X):
         O, _ = self._forward(X)
         return O
+
+    def get_params(self):
+        """Return parameters as a list, in the order the optimizer expects."""
+        return [self.W, self.b]
+
+    def set_params(self, params):
+        self.W, self.b = params[0], params[1]
 
     def train_epoch(self, X, t, optimizer, batch_size=0, shuffle=True, rng=None):
         """Run one full training epoch.
@@ -64,16 +78,16 @@ class SimplePerceptron:
             O, _ = self._forward(X_b)
             deriv = activate_deriv(O, self.activation, self.beta)
 
-            # Gradient of 0.5*mean((t-O)^2) w.r.t. weights
-            delta = (t_b - O) * deriv            # (batch,)
-            grad_bias = -np.mean(delta)
-            grad_w = -np.mean(delta[:, None] * X_b, axis=0)
+            # Gradient of 0.5*mean((t-O)^2) w.r.t. parameters
+            delta = (t_b - O) * deriv                  # (batch,)
+            grad_b = -float(np.mean(delta))             # scalar
+            grad_W = -np.mean(delta[:, None] * X_b, axis=0)  # (n_in,)
 
             if self.weight_decay > 0:
-                grad_w = grad_w + self.weight_decay * self.w[1:]
+                # Weight decay applies to W only — bias is left untouched.
+                grad_W = grad_W + self.weight_decay * self.W
 
-            grads = np.concatenate([[grad_bias], grad_w])
-            self.w = optimizer.step(self.w, grads)
+            self.W, self.b = optimizer.step([self.W, self.b], [grad_W, grad_b])
 
             batch_losses.append(mse(t_b, O))
 

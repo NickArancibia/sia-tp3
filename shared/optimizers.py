@@ -1,12 +1,25 @@
 import numpy as np
 
 
+def _to_list(x):
+    """Wrap a single ndarray/scalar as a one-element list, leave lists as-is."""
+    if isinstance(x, list):
+        return x
+    return [x]
+
+
+def _zeros_like_each(params_list):
+    return [np.zeros_like(np.asarray(p, dtype=float)) for p in params_list]
+
+
 class GradientDescent:
     def __init__(self, lr):
         self.lr = lr
 
     def step(self, params, grads):
-        return params - self.lr * grads
+        params = _to_list(params)
+        grads = _to_list(grads)
+        return [p - self.lr * g for p, g in zip(params, grads)]
 
     def reset(self):
         pass
@@ -19,10 +32,15 @@ class Momentum:
         self._velocity = None
 
     def step(self, params, grads):
+        params = _to_list(params)
+        grads = _to_list(grads)
         if self._velocity is None:
-            self._velocity = np.zeros_like(params)
-        self._velocity = self.momentum * self._velocity - self.lr * grads
-        return params + self._velocity
+            self._velocity = _zeros_like_each(params)
+        new_params = []
+        for i, (p, g) in enumerate(zip(params, grads)):
+            self._velocity[i] = self.momentum * self._velocity[i] - self.lr * g
+            new_params.append(p + self._velocity[i])
+        return new_params
 
     def reset(self):
         self._velocity = None
@@ -39,15 +57,20 @@ class Adam:
         self._t = 0
 
     def step(self, params, grads):
+        params = _to_list(params)
+        grads = _to_list(grads)
         if self._m is None:
-            self._m = np.zeros_like(params)
-            self._v = np.zeros_like(params)
+            self._m = _zeros_like_each(params)
+            self._v = _zeros_like_each(params)
         self._t += 1
-        self._m = self.beta1 * self._m + (1.0 - self.beta1) * grads
-        self._v = self.beta2 * self._v + (1.0 - self.beta2) * grads ** 2
-        m_hat = self._m / (1.0 - self.beta1 ** self._t)
-        v_hat = self._v / (1.0 - self.beta2 ** self._t)
-        return params - self.lr * m_hat / (np.sqrt(v_hat) + self.eps)
+        new_params = []
+        for i, (p, g) in enumerate(zip(params, grads)):
+            self._m[i] = self.beta1 * self._m[i] + (1.0 - self.beta1) * g
+            self._v[i] = self.beta2 * self._v[i] + (1.0 - self.beta2) * g ** 2
+            m_hat = self._m[i] / (1.0 - self.beta1 ** self._t)
+            v_hat = self._v[i] / (1.0 - self.beta2 ** self._t)
+            new_params.append(p - self.lr * m_hat / (np.sqrt(v_hat) + self.eps))
+        return new_params
 
     def reset(self):
         self._m = None
