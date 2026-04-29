@@ -1,0 +1,45 @@
+model:
+  type: "mlp"
+  architecture: [784, 40, 20, 10]
+  hidden_activation: "tanh"
+  output_activation: "logistic"
+  beta: 1.0
+  initializer: "random_normal"
+  init_scale: 0.1
+
+training:
+  optimizer: "adam"
+  learning_rate: 0.001
+  batch_size: 32
+  shuffle: true
+  epochs: 500
+  loss: "mse"
+  momentum: 0.9
+  adam_betas: [0.9, 0.999]
+  adam_eps: 1.0e-8
+  weight_decay: 0.0
+  early_stopping:
+    enabled: true
+    patience: 20
+    monitor: "val_loss"
+  stop_criteria:
+    epsilon: 0.001
+
+data:
+  train_path: "data/digits.csv"
+  test_path: "data/digits_test.csv"
+  preprocess:
+    feature_scaler: "z-score"
+    label_scaler: "none"
+  split:
+    val_frac: 0.2
+    stratify: true
+    seed: 42
+
+experiment:
+  name: "ej2_baseline_tanh_40_20"
+  seed: 42
+  save_plots: true
+  log_every: 1
+  log_level: "INFO"
+  save_model: true

@@ -42,3 +42,21 @@ def initialize_layer(n_in, n_out=1, method="random_normal", scale=0.1, seed=42):
         return W, b
 
     raise ValueError(f"Unknown initializer: {method}")
+
+
+def initialize_layers(architecture, method="random_normal", scale=0.1, seed=42):
+    """Initialize weights and biases for all layers of an MLP.
+
+    architecture: [n_in, h1, h2, ..., n_out]
+    Returns: list of (W, b) tuples, one per layer.
+    Each layer gets a different seed derived from the base seed.
+    """
+    params = []
+    for i in range(len(architecture) - 1):
+        layer_seed = seed + i
+        W, b = initialize_layer(
+            architecture[i], n_out=architecture[i + 1],
+            method=method, scale=scale, seed=layer_seed,
+        )
+        params.append((W, b))
+    return params

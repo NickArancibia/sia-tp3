@@ -19,10 +19,7 @@ class EarlyStopping:
         self.best_params = None
 
     def __call__(self, val_loss, params):
-        """Return True if training should stop.
-
-        ``params`` may be a single ndarray or a list of arrays/scalars.
-        """
+        """Return True if training should stop."""
         if val_loss < self._best - self.min_delta:
             self._best = val_loss
             self._counter = 0
@@ -30,3 +27,20 @@ class EarlyStopping:
             return False
         self._counter += 1
         return self._counter >= self.patience
+
+
+def l2_penalty(weights, lam):
+    """Compute L2 regularization term: (lam / 2) * sum of ||W^(m)||^2 for all layers.
+
+    weights: list of weight matrices (NOT biases — biases are not regularized).
+    """
+    return 0.5 * lam * sum(np.sum(W ** 2) for W in weights)
+
+
+def l2_gradient(weights, lam):
+    """Compute L2 regularization gradient: lam * W for each weight matrix.
+
+    Returns list of gradient matrices (same shapes as weights).
+    Biases are not regularized, so they are excluded from this list.
+    """
+    return [lam * W for W in weights]
