@@ -30,15 +30,23 @@ class MinMaxScaler:
 
 
 def stratified_split(y, val_frac, test_frac, seed=42):
-    """Return (train_idx, val_idx, test_idx) stratified by the binary label y."""
+    """Return (train_idx, val_idx, test_idx) stratified by class y.
+
+    A fraction of 0 yields an empty split (no minimum). A non-zero fraction
+    ensures at least 1 sample per class in that split (avoids empty splits
+    when the fraction is small but non-zero — relevant for rare classes).
+
+    Use ``test_frac=0`` when the test set is provided externally (e.g. EJ2's
+    ``digits_test.csv``) and you only want to split into train/val.
+    """
     rng = np.random.default_rng(seed)
     train_idx, val_idx, test_idx = [], [], []
     for c in np.unique(y):
         idx = np.where(y == c)[0].copy()
         rng.shuffle(idx)
         n = len(idx)
-        n_test = max(1, int(n * test_frac))
-        n_val = max(1, int(n * val_frac))
+        n_test = max(1, int(n * test_frac)) if test_frac > 0 else 0
+        n_val  = max(1, int(n * val_frac))  if val_frac  > 0 else 0
         test_idx.extend(idx[:n_test].tolist())
         val_idx.extend(idx[n_test:n_test + n_val].tolist())
         train_idx.extend(idx[n_test + n_val:].tolist())
