@@ -6,9 +6,9 @@ model:
   init_scale: 0.1
 
 training:
-  optimizer: "gd"        # "gd" | "sgd" | "momentum" | "adam"
-  learning_rate: 0.001
-  batch_size: 32           # 0 = full-batch, 1 = online
+  optimizer: "adam"        # "gd" | "sgd" | "momentum" | "adam"
+  learning_rate: 0.00001
+  batch_size: 30         # 0 = full-batch, 1 = online
   shuffle: true
   epochs: 500
   momentum: 0.9            # only used when optimizer == "momentum"

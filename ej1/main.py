@@ -170,7 +170,7 @@ def run_part2(X, t, y, cfg, results_dir):
     all_metrics = []        # list of dicts per seed
     # For the representative confusion matrix and threshold plot we keep the
     # seed whose F1 is closest to the mean.
-    seed_test_data = []     # (y_test, test_scores, best_t) per seed
+    seed_test_data = []     # (t_test, y_test, test_scores, test_h, best_t) per seed
 
     for seed in seeds:
         rng_s = np.random.default_rng(seed)
@@ -216,6 +216,7 @@ def run_part2(X, t, y, cfg, results_dir):
         # Threshold on val → metrics on test
         val_scores  = p.predict(X_val)
         test_scores = p.predict(X_test)
+        test_h = p.pre_activation(X_test)
         _, _, _, _, best_t = threshold_sweep(y_val, val_scores)
         y_pred = (test_scores >= best_t).astype(int)
 
@@ -228,7 +229,7 @@ def run_part2(X, t, y, cfg, results_dir):
         all_metrics.append(dict(auc_roc=auc_roc, auc_pr=auc_pr,
                                 precision=precision, recall=recall,
                                 f1=f1, threshold=best_t))
-        seed_test_data.append((y_test, test_scores, best_t))
+        seed_test_data.append((t_test, y_test, test_scores, test_h, best_t))
 
         es_info = f" (early stop é.{stopped_at})" if stopped_at < epochs else ""
         print(f"  seed={seed}{es_info} | "
@@ -246,7 +247,7 @@ def run_part2(X, t, y, cfg, results_dir):
     # --- Representative run (F1 closest to mean) for ROC / PR / threshold / CM ---
     mean_f1 = np.mean([m["f1"] for m in all_metrics])
     rep_idx = int(np.argmin([abs(m["f1"] - mean_f1) for m in all_metrics]))
-    y_test_rep, test_scores_rep, best_t_rep = seed_test_data[rep_idx]
+    t_test_rep, y_test_rep, test_scores_rep, test_h_rep, best_t_rep = seed_test_data[rep_idx]
 
     fpr, tpr = roc_curve(y_test_rep, test_scores_rep)
     auc_roc_rep = auc(fpr, tpr)
@@ -261,6 +262,20 @@ def run_part2(X, t, y, cfg, results_dir):
     th, th_precs, th_recs, th_f1s, _ = threshold_sweep(y_test_rep, test_scores_rep)
     utils.plot_threshold_sweep(th, th_precs, th_recs, th_f1s, best_t_rep,
                                path=os.path.join(results_dir, "part2_threshold_sweep.png"))
+
+    utils.plot_target_vs_prediction(
+        t_test_rep,
+        test_scores_rep,
+        path=os.path.join(results_dir, "part2_target_vs_prediction.png"),
+    )
+
+    utils.plot_internal_function(
+        test_h_rep,
+        t_test_rep,
+        activation=cfg["model"]["activation"],
+        beta=cfg["model"].get("beta", 1.0),
+        path=os.path.join(results_dir, "part2_internal_function.png"),
+    )
 
     y_pred_rep = (test_scores_rep >= best_t_rep).astype(int)
     cm = confusion_matrix(y_test_rep, y_pred_rep)

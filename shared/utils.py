@@ -5,6 +5,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
+from shared.activations import activate
+
 
 def save_fig(fig, path):
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -183,6 +185,51 @@ def plot_threshold_sweep(thresholds, precisions, recalls, f1s, best_t, path=None
     ax.set_ylabel("Score")
     ax.set_title("Barrido de umbral de detección de fraude")
     ax.legend()
+    if path:
+        save_fig(fig, path)
+    return fig
+
+
+def plot_target_vs_prediction(targets, predictions, path=None):
+    targets = np.asarray(targets)
+    predictions = np.asarray(predictions)
+
+    fig, ax = plt.subplots(figsize=(6, 6))
+    ax.scatter(targets, predictions, alpha=0.35, s=18, color="slateblue")
+
+    lo = float(min(targets.min(), predictions.min()))
+    hi = float(max(targets.max(), predictions.max()))
+    ax.plot([lo, hi], [lo, hi], "k--", linewidth=1.0, label="Ideal: y = x")
+
+    ax.set_xlabel("Target (BigModel)")
+    ax.set_ylabel("Predicción del perceptrón")
+    ax.set_title("Target vs Predicción")
+    ax.legend()
+    fig.tight_layout()
+    if path:
+        save_fig(fig, path)
+    return fig
+
+
+def plot_internal_function(pre_activations, targets, activation, beta=1.0, path=None):
+    pre_activations = np.asarray(pre_activations)
+    targets = np.asarray(targets)
+
+    order = np.argsort(pre_activations)
+    h_sorted = pre_activations[order]
+    curve = activate(h_sorted, activation, beta)
+
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.scatter(pre_activations, targets, alpha=0.35, s=18, color="slateblue",
+               label="Targets BigModel")
+    ax.plot(h_sorted, curve, color="crimson", linewidth=2.0,
+            label=f"Curva del perceptrón ({activation})")
+
+    ax.set_xlabel("Score interno h = w·x + b")
+    ax.set_ylabel("Target / predicción")
+    ax.set_title("Función interna del perceptrón")
+    ax.legend()
+    fig.tight_layout()
     if path:
         save_fig(fig, path)
     return fig

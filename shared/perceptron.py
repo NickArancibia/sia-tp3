@@ -29,9 +29,12 @@ class SimplePerceptron:
 
     def _forward(self, X):
         """X: (N, n_features). Returns (O, h)."""
-        h = X @ self.w[1:] + self.w[0]
+        h = self.pre_activation(X)
         O = activate(h, self.activation, self.beta)
         return O, h
+
+    def pre_activation(self, X):
+        return X @ self.w[1:] + self.w[0]
 
     def predict(self, X):
         O, _ = self._forward(X)
