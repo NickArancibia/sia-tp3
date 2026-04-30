@@ -75,6 +75,33 @@ def stratified_split(y, val_frac, test_frac=0.0, seed=42):
     return np.array(train_idx), np.array(val_idx), np.array(test_idx)
 
 
+def stratified_kfold_indices(y, n_splits, seed=42):
+    """Return stratified folds as a list of index arrays."""
+    if n_splits < 2:
+        raise ValueError("n_splits must be at least 2")
+
+    y = np.asarray(y)
+    class_counts = [int(np.sum(y == c)) for c in np.unique(y)]
+    if min(class_counts) < n_splits:
+        raise ValueError("Each class must have at least n_splits samples")
+
+    rng = np.random.default_rng(seed)
+    folds = [[] for _ in range(n_splits)]
+
+    for c in np.unique(y):
+        idx = np.where(y == c)[0].copy()
+        rng.shuffle(idx)
+        for fold_idx, chunk in enumerate(np.array_split(idx, n_splits)):
+            folds[fold_idx].extend(chunk.tolist())
+
+    fold_arrays = []
+    for fold in folds:
+        fold = np.array(fold, dtype=int)
+        rng.shuffle(fold)
+        fold_arrays.append(fold)
+    return fold_arrays
+
+
 def one_hot_encode(y, n_classes=None):
     """Convert integer labels to one-hot matrix.
 

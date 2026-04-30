@@ -41,7 +41,7 @@ class SimplePerceptron:
         return O, h
 
     def pre_activation(self, X):
-        return X @ self.w[1:] + self.w[0]
+        return X @ self.W + self.b
 
     def predict(self, X):
         O, _ = self._forward(X)

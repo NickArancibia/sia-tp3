@@ -119,7 +119,8 @@ def pr_curve(y_true, y_scores):
 
 def auc(x, y):
     order = np.argsort(x)
-    return float(np.trapezoid(y[order], x[order]))
+    trapezoid = getattr(np, "trapezoid", np.trapz)
+    return float(trapezoid(y[order], x[order]))
 
 
 def threshold_sweep(y_true, y_scores, n_points=300):

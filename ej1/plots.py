@@ -5,6 +5,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
+from shared.activations import activate
+
 
 def save_fig(fig, path):
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -154,17 +156,145 @@ def plot_confusion_matrix(cm, path=None):
     return fig
 
 
-def plot_threshold_sweep(thresholds, precisions, recalls, f1s, best_t, path=None):
+def plot_threshold_sweep(thresholds, precisions, recalls, f1s, best_t, path=None,
+                         precisions_std=None, recalls_std=None, f1s_std=None):
     fig, ax = plt.subplots(figsize=(9, 4))
     ax.plot(thresholds, precisions, label="Precision")
     ax.plot(thresholds, recalls, label="Recall")
     ax.plot(thresholds, f1s, label="F1", linewidth=2)
+    if precisions_std is not None:
+        ax.fill_between(thresholds, precisions - precisions_std, precisions + precisions_std,
+                        alpha=0.2)
+    if recalls_std is not None:
+        ax.fill_between(thresholds, recalls - recalls_std, recalls + recalls_std,
+                        alpha=0.2)
+    if f1s_std is not None:
+        ax.fill_between(thresholds, f1s - f1s_std, f1s + f1s_std,
+                        alpha=0.15)
     ax.axvline(best_t, color="red", linestyle="--",
                label=f"Umbral óptimo = {best_t:.3f}")
     ax.set_xlabel("Umbral de detección")
     ax.set_ylabel("Score")
     ax.set_title("Barrido de umbral de detección de fraude")
     ax.legend()
+    if path:
+        save_fig(fig, path)
+    return fig
+
+
+def plot_target_vs_prediction(targets, predictions, path=None):
+    targets = np.asarray(targets)
+    predictions = np.asarray(predictions)
+
+    fig, ax = plt.subplots(figsize=(6, 6))
+    ax.scatter(targets, predictions, alpha=0.35, s=18, color="slateblue")
+
+    lo = float(min(targets.min(), predictions.min()))
+    hi = float(max(targets.max(), predictions.max()))
+    ax.plot([lo, hi], [lo, hi], "k--", linewidth=1.0, label="Ideal: y = x")
+
+    ax.set_xlabel("Target (BigModel)")
+    ax.set_ylabel("Predicción del perceptrón")
+    ax.set_title("Target vs Predicción")
+    ax.legend()
+    fig.tight_layout()
+    if path:
+        save_fig(fig, path)
+    return fig
+
+
+def plot_internal_function(pre_activations, targets, activation, beta=1.0, path=None):
+    pre_activations = np.asarray(pre_activations)
+    targets = np.asarray(targets)
+
+    order = np.argsort(pre_activations)
+    h_sorted = pre_activations[order]
+    curve = activate(h_sorted, activation, beta)
+
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.scatter(pre_activations, targets, alpha=0.35, s=18, color="slateblue",
+               label="Targets BigModel")
+    ax.plot(h_sorted, curve, color="crimson", linewidth=2.0,
+            label=f"Curva del perceptrón ({activation})")
+
+    ax.set_xlabel("Score interno h = w·x + b")
+    ax.set_ylabel("Target / predicción")
+    ax.set_title("Función interna del perceptrón")
+    ax.legend()
+    fig.tight_layout()
+    if path:
+        save_fig(fig, path)
+    return fig
+
+
+def plot_metric_bars(labels, means, stds, ylabel, title, path=None):
+    labels = list(labels)
+    means = np.asarray(means, dtype=float)
+    stds = np.asarray(stds, dtype=float)
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    x = np.arange(len(labels))
+    bars = ax.bar(x, means, yerr=stds, capsize=8, alpha=0.8, color="steelblue")
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels)
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+
+    mean_max = float(np.max(means)) if len(means) else 0.0
+    mean_min = float(np.min(means)) if len(means) else 0.0
+    std_max = float(np.max(stds)) if len(stds) else 0.0
+    margin = max(std_max * 2, mean_max * 0.03, 0.01)
+    ax.set_ylim(max(0.0, mean_min - margin), mean_max + margin * 2)
+    for bar, mean, std in zip(bars, means, stds):
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height() + margin * 0.25,
+            f"{mean:.4f}\n±{std:.4f}",
+            ha="center",
+            va="bottom",
+            fontsize=8,
+        )
+
+    fig.tight_layout()
+    if path:
+        save_fig(fig, path)
+    return fig
+
+
+def plot_strategy_overfitting_curves(strategy_curves, path=None):
+    labels = list(strategy_curves.keys())
+    fig, axes = plt.subplots(1, len(labels), figsize=(6 * len(labels), 4.5), sharey=True)
+    if len(labels) == 1:
+        axes = [axes]
+
+    for ax, label in zip(axes, labels):
+        train_arr = _to_runs(strategy_curves[label]["train"])
+        val_arr = _to_runs(strategy_curves[label]["val"])
+        epochs = np.arange(1, train_arr.shape[1] + 1)
+
+        train_mean = train_arr.mean(axis=0)
+        train_std = train_arr.std(axis=0)
+        val_mean = val_arr.mean(axis=0)
+        val_std = val_arr.std(axis=0)
+
+        ax.plot(epochs, train_mean, label="Train MSE", color="steelblue")
+        if train_arr.shape[0] > 1:
+            ax.fill_between(epochs, train_mean - train_std, train_mean + train_std,
+                            alpha=0.2, color="steelblue")
+
+        ax.plot(epochs, val_mean, label="Val MSE", color="tomato")
+        if val_arr.shape[0] > 1:
+            ax.fill_between(epochs, val_mean - val_std, val_mean + val_std,
+                            alpha=0.2, color="tomato")
+
+        ax.set_title(label)
+        ax.set_xlabel("Época")
+        ax.grid(alpha=0.2)
+
+    axes[0].set_ylabel("MSE")
+    axes[0].legend()
+    fig.suptitle("Overfitting por estrategia de datos", fontsize=13)
+    fig.tight_layout()
     if path:
         save_fig(fig, path)
     return fig
