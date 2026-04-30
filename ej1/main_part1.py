@@ -7,10 +7,13 @@ import numpy as np
 import pandas as pd
 
 from shared.config_loader import load_config
+from shared.losses import mse
 from shared.optimizers import build_optimizer
 from shared.perceptron import SimplePerceptron
 from shared.preprocessing import build_scaler
-from plots import plot_multi_learning_curves
+from plots import (plot_internal_function_comparison,
+                   plot_learning_curve_comparison,
+                   plot_target_vs_prediction_comparison)
 
 
 def load_data(cfg):
@@ -45,6 +48,12 @@ def load_data(cfg):
     return X, t, y, feature_cols
 
 
+def _representative_run(runs):
+    mean_final_mse = float(np.mean([run["final_mse"] for run in runs]))
+    rep_idx = int(np.argmin([abs(run["final_mse"] - mean_final_mse) for run in runs]))
+    return runs[rep_idx]
+
+
 def run_part1(X, t, cfg, results_dir):
     print("\n" + "=" * 60)
     print("PARTE 1 — Análisis de aprendizaje (todos los datos)")
@@ -66,7 +75,7 @@ def run_part1(X, t, cfg, results_dir):
         (cfg["model"]["activation"], f"No Lineal ({cfg['model']['activation']})"),
     ]
 
-    all_runs = {label: [] for _, label in model_specs}
+    model_runs = {label: [] for _, label in model_specs}
 
     for activation, label in model_specs:
         print(f"Entrenando perceptrón {label} ({len(seeds)} seeds)...")
@@ -88,24 +97,61 @@ def run_part1(X, t, cfg, results_dir):
                                         batch_size=batch_size,
                                         shuffle=shuffle, rng=rng_s)
                 epoch_losses.append(loss)
-            all_runs[label].append(epoch_losses)
+            predictions = p.predict(X_scaled)
+            pre_activations = p.pre_activation(X_scaled)
+            final_mse = float(mse(t, predictions))
+            model_runs[label].append({
+                "seed": seed,
+                "activation": activation,
+                "losses": epoch_losses,
+                "predictions": predictions,
+                "pre_activations": pre_activations,
+                "final_mse": final_mse,
+            })
 
-        finals = [runs[-1] for runs in all_runs[label]]
+        finals = [run["final_mse"] for run in model_runs[label]]
         print(f"  {label}: MSE final={np.mean(finals):.6f} ± {np.std(finals):.6f}")
 
-    plot_multi_learning_curves(
-        all_runs,
+    learning_runs = {
+        label: [run["losses"] for run in runs]
+        for label, runs in model_runs.items()
+    }
+    plot_learning_curve_comparison(
+        learning_runs,
         title=f"Parte 1 — Lineal vs No Lineal ({len(seeds)} seeds, media ± std)",
-        path=os.path.join(results_dir, "part1_learning_curves.png"),
+        path=os.path.join(results_dir, "learning_curve_linear_vs_nonlinear.png"),
     )
-    print("Curvas guardadas en results/part1_learning_curves.png")
+
+    rep_runs = []
+    for activation, label in model_specs:
+        rep = _representative_run(model_runs[label])
+        rep_runs.append({
+            "label": label,
+            "activation": activation,
+            "beta": beta,
+            "targets": t,
+            "predictions": rep["predictions"],
+            "pre_activations": rep["pre_activations"],
+        })
+
+    plot_internal_function_comparison(
+        rep_runs,
+        title="Parte 1 — Función interna lineal vs no lineal",
+        path=os.path.join(results_dir, "internal_function_linear_vs_nonlinear.png"),
+    )
+    plot_target_vs_prediction_comparison(
+        rep_runs,
+        title="Parte 1 — Target de BigModel vs predicción de TinyModel",
+        path=os.path.join(results_dir, "target_vs_prediction_linear_nonlinear.png"),
+    )
+    print("Gráficos guardados en results/part1/")
 
 
 if __name__ == "__main__":
     base = os.path.dirname(os.path.abspath(__file__))
     cfg = load_config(os.path.join(base, "config.yaml"))
 
-    results_dir = os.path.join(base, cfg["experiment"]["results_dir"])
+    results_dir = os.path.join(base, cfg["experiment"]["results_dir"], "part1")
     os.makedirs(results_dir, exist_ok=True)
 
     X, t, y, feature_cols = load_data(cfg)

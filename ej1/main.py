@@ -44,8 +44,10 @@ if __name__ == "__main__":
     cfg = load_config(os.path.join(base, "config.yaml"))
 
     results_dir = os.path.join(base, cfg["experiment"]["results_dir"])
+    part1_results_dir = os.path.join(results_dir, "part1")
     part2_results_dir = os.path.join(results_dir, "part2")
     os.makedirs(results_dir, exist_ok=True)
+    os.makedirs(part1_results_dir, exist_ok=True)
     os.makedirs(part2_results_dir, exist_ok=True)
 
     X, t, y, feature_cols = load_data(cfg)
@@ -53,5 +55,5 @@ if __name__ == "__main__":
     from main_part1 import run_part1
     from main_part2 import run_part2
 
-    run_part1(X, t, cfg, results_dir)
+    run_part1(X, t, cfg, part1_results_dir)
     run_part2(X, t, y, cfg, part2_results_dir)

@@ -44,6 +44,9 @@ generalization_search:
   optimizers: ["gd", "adam"]
   optimizer_screening_learning_rate: 0.0001
   optimizer_screening_batch_size: 32
-  joint_batch_base: 32
-  joint_lr_base: 0.0001
-  joint_batch_sizes: [8, 16, 32, 64, 128]
+  joint_configs:
+    - {name: "E1", batch_size: 4, learning_rate: 0.0000125}
+    - {name: "E2", batch_size: 16, learning_rate: 0.00005}
+    - {name: "E3", batch_size: 32, learning_rate: 0.0001}
+    - {name: "E4", batch_size: 128, learning_rate: 0.0002}
+    - {name: "E5", batch_size: 512, learning_rate: 0.0004}

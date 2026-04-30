@@ -9,7 +9,7 @@ import pandas as pd
 
 from main_part2 import _make_perceptron, load_data
 from plots import (plot_confusion_matrix, plot_internal_function, plot_learning_curves,
-                   plot_metric_bars, plot_pr, plot_strategy_overfitting_curves,
+                   plot_grouped_metric_bars, plot_metric_bars, plot_pr, plot_strategy_overfitting_curves,
                    plot_threshold_sweep)
 from shared.config_loader import load_config
 from shared.losses import mse
@@ -42,28 +42,44 @@ def _copy_cfg(cfg, scaler_name=None, training_overrides=None):
 
 def _search_space(cfg):
     search_cfg = cfg.get("generalization_search", {})
-    batch_base = int(search_cfg.get("joint_batch_base", 32))
-    lr_base = float(search_cfg.get("joint_lr_base", 1e-4))
-    joint_batch_sizes = [int(batch) for batch in search_cfg.get("joint_batch_sizes", [8, 16, 32, 64, 128])]
+    joint_cfgs = []
+    for idx, joint_cfg in enumerate(search_cfg.get("joint_configs", []), start=1):
+        joint_cfgs.append({
+            "name": joint_cfg.get("name", f"E{idx}"),
+            "batch_size": int(joint_cfg["batch_size"]),
+            "learning_rate": float(joint_cfg["learning_rate"]),
+        })
+
+    if not joint_cfgs:
+        batch_base = int(search_cfg.get("joint_batch_base", 32))
+        lr_base = float(search_cfg.get("joint_lr_base", 1e-4))
+        joint_batch_sizes = [int(batch) for batch in search_cfg.get("joint_batch_sizes", [4, 16, 32, 128, 512])]
+        for idx, batch_size in enumerate(joint_batch_sizes, start=1):
+            joint_cfgs.append({
+                "name": f"E{idx}",
+                "batch_size": batch_size,
+                "learning_rate": float(lr_base * (batch_size / batch_base)),
+            })
+
     return {
         "optimizers": search_cfg.get("optimizers", ["gd", "adam"]),
-        "optimizer_screening_learning_rate": float(search_cfg.get("optimizer_screening_learning_rate", lr_base)),
-        "optimizer_screening_batch_size": int(search_cfg.get("optimizer_screening_batch_size", batch_base)),
-        "joint_batch_base": batch_base,
-        "joint_lr_base": lr_base,
-        "joint_batch_sizes": joint_batch_sizes,
+        "optimizer_screening_learning_rate": float(search_cfg.get("optimizer_screening_learning_rate", 1e-4)),
+        "optimizer_screening_batch_size": int(search_cfg.get("optimizer_screening_batch_size", 32)),
+        "joint_configs": joint_cfgs,
     }
 
 
 def _joint_batch_lr_configs(space):
     configs = []
-    for idx, batch_size in enumerate(space["joint_batch_sizes"], start=1):
-        learning_rate = space["joint_lr_base"] * (batch_size / space["joint_batch_base"])
+    for joint_cfg in space["joint_configs"]:
         configs.append({
-            "name": f"E{idx}",
-            "batch_size": int(batch_size),
-            "learning_rate": float(learning_rate),
-            "label": f"E{idx}\nb={batch_size}, lr={_format_lr(learning_rate)}",
+            "name": joint_cfg["name"],
+            "batch_size": int(joint_cfg["batch_size"]),
+            "learning_rate": float(joint_cfg["learning_rate"]),
+            "label": (
+                f"{joint_cfg['name']}\n"
+                f"b={joint_cfg['batch_size']}, lr={_format_lr(joint_cfg['learning_rate'])}"
+            ),
         })
     return configs
 
@@ -480,6 +496,22 @@ def run_generalization(X, t, y, cfg, results_dir):
         title="Comparación de estrategias de datos",
         path=os.path.join(results_dir, "data_strategy_aucpr.png"),
     )
+    plot_grouped_metric_bars(
+        [summary["strategy_label"] for summary in strategy_summaries],
+        {
+            "Precision": {
+                "means": [summary["mean_val_precision"] for summary in strategy_summaries],
+                "stds": [summary["std_val_precision"] for summary in strategy_summaries],
+            },
+            "Recall": {
+                "means": [summary["mean_val_recall"] for summary in strategy_summaries],
+                "stds": [summary["std_val_recall"] for summary in strategy_summaries],
+            },
+        },
+        ylabel="Score en validación",
+        title="Precision y Recall por estrategia de datos",
+        path=os.path.join(results_dir, "data_strategy_precision_recall.png"),
+    )
     plot_strategy_overfitting_curves(
         {
             summary["strategy_label"]: {
@@ -489,6 +521,8 @@ def run_generalization(X, t, y, cfg, results_dir):
             for summary in strategy_summaries
         },
         path=os.path.join(results_dir, "data_strategy_overfitting_curves.png"),
+        zoom_tail=True,
+        show_std=False,
     )
 
     scaler_summaries = []
@@ -605,6 +639,19 @@ def run_generalization(X, t, y, cfg, results_dir):
         title="Búsqueda conjunta de batch size y learning rate",
         path=os.path.join(results_dir, "batch_lr_joint_comparison_aucpr.png"),
     )
+    plot_strategy_overfitting_curves(
+        {
+            summary["joint_label"]: {
+                "train": summary["train_curves"],
+                "val": summary["val_curves"],
+            }
+            for summary in joint_summaries
+        },
+        path=os.path.join(results_dir, "batch_lr_joint_overfitting_curves.png"),
+        title="Overfitting por combinación batch size + learning rate",
+        zoom_tail=False,
+        show_std=True,
+    )
 
     selected_cfg = _copy_cfg(
         cfg,
@@ -643,6 +690,7 @@ def run_generalization(X, t, y, cfg, results_dir):
             f"seed={selected_seed['seed']})"
         ),
         path=os.path.join(results_dir, "selected_model_learning_curve.png"),
+        zoom_tail=True,
     )
 
     threshold_curves = selected_seed["threshold_curves"]
@@ -745,7 +793,7 @@ def run_generalization(X, t, y, cfg, results_dir):
     print(f"  F1 test:                {final_result['test_f1']:.4f}")
     print("  CSV:                    results/part2/generalization_experiments.csv")
     print("  Gráficos:               results/part2/data_strategy_*.png, scaling_comparison.png,")
-    print("                           optimizer_screening_aucpr.png, batch_lr_joint_comparison_aucpr.png,")
+    print("                           optimizer_screening_aucpr.png, batch_lr_joint_*.png,")
     print("                           selected_model_*.png")
 
 
