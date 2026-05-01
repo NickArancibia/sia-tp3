@@ -6,16 +6,7 @@ from shared.losses import mse
 
 
 class SimplePerceptron:
-    """Simple perceptron supporting identity (linear) and sigmoid/tanh (non-linear) activations.
 
-    Weights and bias are stored as separate attributes:
-      self.W : ndarray of shape (n_inputs,)
-      self.b : float
-
-    This generalises naturally to MLP, where each layer keeps its own W matrix
-    and b vector; optimizers and regularisation only need to know "the parameters
-    are a list of tensors", not "the bias lives in slot 0 of a flat vector".
-    """
 
     def __init__(
         self,
@@ -27,6 +18,10 @@ class SimplePerceptron:
         seed=42,
         weight_decay=0.0,
     ):
+        if n_inputs <= 0:
+            raise ValueError(f"n_inputs must be positive, got {n_inputs}")
+        if weight_decay < 0:
+            raise ValueError(f"weight_decay must be >= 0, got {weight_decay}")
         self.W, self.b = initialize_layer(
             n_inputs, n_out=1, method=initializer, scale=init_scale, seed=seed
         )
@@ -66,7 +61,9 @@ class SimplePerceptron:
             batch_size = N
 
         indices = np.arange(N)
-        if shuffle and rng is not None:
+        if shuffle:
+            if rng is None:
+                rng = np.random.default_rng()
             rng.shuffle(indices)
 
         batch_losses = []
