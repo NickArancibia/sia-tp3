@@ -34,7 +34,9 @@ def l2_penalty(weights, lam):
 
     weights: list of weight matrices (NOT biases — biases are not regularized).
     """
-    return 0.5 * lam * sum(np.sum(W ** 2) for W in weights)
+    if lam == 0:
+        return 0.0
+    return 0.5 * lam * sum(float(np.sum(W ** 2)) for W in weights)
 
 
 def l2_gradient(weights, lam):
