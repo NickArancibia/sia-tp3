@@ -33,12 +33,15 @@ def initialize_layers(architecture, method="random_normal", scale=0.1, seed=42):
     Returns: list of (W, b) tuples, one per layer.
     Each layer gets a different seed derived from the base seed.
     """
+    n_layers = len(architecture) - 1
+    seed_seq = np.random.SeedSequence(seed)
+    layer_seeds = seed_seq.spawn(n_layers)
+
     params = []
-    for i in range(len(architecture) - 1):
-        layer_seed = seed + i
+    for i in range(n_layers):
         W, b = initialize_layer(
             architecture[i], n_out=architecture[i + 1],
-            method=method, scale=scale, seed=layer_seed,
+            method=method, scale=scale, seed=layer_seeds[i],
         )
         params.append((W, b))
     return params

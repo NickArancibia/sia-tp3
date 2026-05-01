@@ -119,7 +119,7 @@ def pr_curve(y_true, y_scores):
 
 def auc(x, y):
     order = np.argsort(x)
-    trapezoid = getattr(np, "trapezoid", np.trapz)
+    trapezoid = np.trapezoid if hasattr(np, "trapezoid") else np.trapz
     return float(trapezoid(y[order], x[order]))
 
 
