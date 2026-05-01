@@ -41,12 +41,17 @@ experiment:
   results_dir: "results"
 
 generalization_search:
-  optimizers: ["gd", "adam"]
-  optimizer_screening_learning_rate: 0.0001
-  optimizer_screening_batch_size: 32
-  joint_configs:
-    - {name: "E1", batch_size: 4, learning_rate: 0.0000125}
-    - {name: "E2", batch_size: 16, learning_rate: 0.00005}
-    - {name: "E3", batch_size: 32, learning_rate: 0.0001}
-    - {name: "E4", batch_size: 128, learning_rate: 0.0002}
-    - {name: "E5", batch_size: 512, learning_rate: 0.0004}
+  selected_strategy: "S3"
+  selected_scaler: "min-max"
+  strategy_baseline:
+    optimizer: "adam"
+    batch_size: 32
+    learning_rate: 0.0001
+  optimizer_screening_epochs: 100
+  optimizer_screening_candidates:
+    - {candidate_name: "gd_full", optimizer: "gd", batch_size: -1, momentum: 0.9, source: "full_best_lr"}
+    - {candidate_name: "sgd_online", optimizer: "sgd", batch_size: 1, momentum: 0.9, source: "online_best_lr"}
+    - {candidate_name: "adam_best", optimizer: "adam", batch_size: null, momentum: 0.9, source: "global_best_combo"}
+    - {candidate_name: "momentum_best", optimizer: "momentum", batch_size: null, momentum: 0.9, source: "global_best_combo"}
+  heatmap_learning_rates: [0.001, 0.0005, 0.0001, 0.00005]
+  heatmap_batch_sizes: [1, 4, 16, 32, 128, 512, -1]

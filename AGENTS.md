@@ -42,7 +42,7 @@ sia-tp3/
 │   ├── perceptron.py       # Implementación base de perceptrón (escalón / lineal / no lineal)
 │   ├── mlp.py              # Multi-Layer Perceptron (forward + backprop)
 │   ├── activations.py      # Funciones de activación y derivadas (escalón, identidad, tanh, logística)
-│   ├── initializers.py     # Inicialización de pesos (random pequeño, Xavier, He)
+│   ├── initializers.py     # Inicialización de pesos (random pequeño)
 │   ├── optimizers.py       # GD, SGD, Momentum, Adam (interfaz común tipo `step(params, grads)`)
 │   ├── losses.py           # MSE (default); cross-entropy opcional para Ej2/3
 │   ├── metrics.py          # Accuracy, precision, recall, F1, AUC-ROC, AUC-PR, matriz de confusión
@@ -97,7 +97,7 @@ model:
   architecture: [n_in, h1, h2, ..., n_out]   # solo para mlp
   activation: "step" | "identity" | "tanh" | "logistic" | "sigmoid" | "relu" 
   beta: 1.0                       # pendiente sigmoidea (no lineal / mlp con tanh o logística)
-  initializer: "random_normal" | "xavier" | "he"
+  initializer: "random_normal"
   init_scale: 0.1                 # σ para random_normal
 
 training:

@@ -108,7 +108,7 @@ def build_model(cfg, n_features, n_classes):
         hidden_activation=cfg["model"].get("hidden_activation", "tanh"),
         output_activation=cfg["model"].get("output_activation", "logistic"),
         beta=cfg["model"].get("beta", 1.0),
-        initializer=cfg["model"].get("initializer", "xavier"),
+        initializer=cfg["model"].get("initializer", "random_normal"),
         init_scale=cfg["model"].get("init_scale", 0.1),
         seed=cfg["experiment"].get("seed", 42),
         weight_decay=cfg["training"].get("weight_decay", 0.0),

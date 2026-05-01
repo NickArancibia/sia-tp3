@@ -14,34 +14,16 @@ def initialize_layer(n_in, n_out=1, method="random_normal", scale=0.1, seed=42):
     """
     rng = np.random.default_rng(seed)
 
-    if method == "random_normal":
-        if n_out == 1:
-            arr = rng.normal(0.0, scale, size=n_in + 1)
-            return arr[1:].copy(), float(arr[0])
-        arr = rng.normal(0.0, scale, size=n_out * (n_in + 1))
-        b = arr[:n_out].copy()
-        W = arr[n_out:].reshape(n_out, n_in).copy()
-        return W, b
+    if method != "random_normal":
+        raise ValueError(f"Unknown initializer: {method}")
 
-    elif method == "xavier":
-        limit = np.sqrt(6.0 / (n_in + n_out))
-        if n_out == 1:
-            W = rng.uniform(-limit, limit, size=n_in)
-            return W, 0.0
-        W = rng.uniform(-limit, limit, size=(n_out, n_in))
-        b = np.zeros(n_out)
-        return W, b
-
-    elif method == "he":
-        std = np.sqrt(2.0 / n_in)
-        if n_out == 1:
-            W = rng.normal(0.0, std, size=n_in)
-            return W, 0.0
-        W = rng.normal(0.0, std, size=(n_out, n_in))
-        b = np.zeros(n_out)
-        return W, b
-
-    raise ValueError(f"Unknown initializer: {method}")
+    if n_out == 1:
+        arr = rng.normal(0.0, scale, size=n_in + 1)
+        return arr[1:].copy(), float(arr[0])
+    arr = rng.normal(0.0, scale, size=n_out * (n_in + 1))
+    b = arr[:n_out].copy()
+    W = arr[n_out:].reshape(n_out, n_in).copy()
+    return W, b
 
 
 def initialize_layers(architecture, method="random_normal", scale=0.1, seed=42):

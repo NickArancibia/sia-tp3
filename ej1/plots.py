@@ -173,19 +173,24 @@ def plot_pr(precisions, recalls, auc_val, path=None):
 
 
 def plot_confusion_matrix(cm, path=None):
-    labels = ["No Fraude (0)", "Fraude (1)"]
+    # Internal layout is [[TN, FP], [FN, TP]]. Reorder for the report view:
+    # [[TP, FN], [FP, TN]] so it matches the convention used in class.
+    display_cm = np.array([
+        [cm[1, 1], cm[1, 0]],
+        [cm[0, 1], cm[0, 0]],
+    ])
     fig, ax = plt.subplots(figsize=(5, 4))
-    im = ax.imshow(cm, cmap="Blues")
+    im = ax.imshow(display_cm, cmap="Blues")
     ax.set_xticks([0, 1])
-    ax.set_xticklabels([f"Pred {l}" for l in labels])
+    ax.set_xticklabels(["Pred Fraude (1)", "Pred No Fraude (0)"])
     ax.set_yticks([0, 1])
-    ax.set_yticklabels([f"Real {l}" for l in labels])
-    thresh = cm.max() / 2.0
+    ax.set_yticklabels(["Real Fraude (1)", "Real No Fraude (0)"])
+    thresh = display_cm.max() / 2.0
     for i in range(2):
         for j in range(2):
-            ax.text(j, i, str(cm[i, j]), ha="center", va="center",
-                    color="white" if cm[i, j] > thresh else "black", fontsize=12)
-    ax.set_title("Matriz de Confusión")
+            ax.text(j, i, str(display_cm[i, j]), ha="center", va="center",
+                    color="white" if display_cm[i, j] > thresh else "black", fontsize=12)
+    ax.set_title("Matriz de Confusión (clase positiva = Fraude)")
     fig.colorbar(im)
     fig.tight_layout()
     if path:
@@ -393,6 +398,45 @@ def plot_grouped_metric_bars(labels, series, ylabel, title, path=None):
     ax.set_title(title)
     ax.set_ylim(max(0.0, mean_min - margin), min(1.05, mean_max + margin * 1.4))
     ax.legend()
+    fig.tight_layout()
+    if path:
+        save_fig(fig, path)
+    return fig
+
+
+def plot_heatmap(values, row_labels, col_labels, title, cbar_label, path=None, annotations=None):
+    values = np.asarray(values, dtype=float)
+    fig, ax = plt.subplots(figsize=(1.8 * len(col_labels) + 2, 0.8 * len(row_labels) + 3))
+    im = ax.imshow(values, cmap="viridis", aspect="auto")
+
+    ax.set_xticks(np.arange(len(col_labels)))
+    ax.set_xticklabels(col_labels)
+    ax.set_yticks(np.arange(len(row_labels)))
+    ax.set_yticklabels(row_labels)
+    ax.set_title(title)
+    ax.set_xlabel("Learning rate")
+    ax.set_ylabel("Configuración")
+
+    cbar = fig.colorbar(im, ax=ax)
+    cbar.set_label(cbar_label)
+
+    if annotations is None:
+        annotations = [[f"{val:.4f}" for val in row] for row in values]
+
+    thresh = float(np.nanmean(values)) if np.isfinite(values).any() else 0.0
+    for i in range(values.shape[0]):
+        for j in range(values.shape[1]):
+            text = annotations[i][j]
+            ax.text(
+                j,
+                i,
+                text,
+                ha="center",
+                va="center",
+                color="white" if values[i, j] < thresh else "black",
+                fontsize=8,
+            )
+
     fig.tight_layout()
     if path:
         save_fig(fig, path)

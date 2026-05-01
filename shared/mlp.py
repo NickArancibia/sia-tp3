@@ -15,7 +15,7 @@ class MLP:
     hidden_activation: activation for all hidden layers ("tanh", "logistic", "relu")
     output_activation: activation for the output layer ("logistic", "identity", "tanh")
     beta: sigmoid steepness parameter (used with tanh/logistic)
-    initializer: weight initialization method ("random_normal", "xavier", "he")
+    initializer: weight initialization method ("random_normal")
     init_scale: std for random_normal initializer
     seed: base random seed (each layer uses seed + layer_index)
     weight_decay: L2 regularization lambda (0 = no regularization)
@@ -28,7 +28,7 @@ class MLP:
         hidden_activation="tanh",
         output_activation="logistic",
         beta=1.0,
-        initializer="xavier",
+        initializer="random_normal",
         init_scale=0.1,
         seed=42,
         weight_decay=0.0,

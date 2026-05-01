@@ -42,6 +42,23 @@ def _copy_cfg(cfg, scaler_name=None, training_overrides=None):
 
 def _search_space(cfg):
     search_cfg = cfg.get("generalization_search", {})
+    optimizer_screening = []
+    for opt_cfg in search_cfg.get("optimizer_screening", []):
+        optimizer_screening.append({
+            "name": opt_cfg["name"],
+            "batch_size": int(opt_cfg["batch_size"]),
+            "learning_rates": [float(lr) for lr in opt_cfg["learning_rates"]],
+            "momentum": float(opt_cfg.get("momentum", 0.9)),
+        })
+
+    if not optimizer_screening:
+        optimizer_screening = [
+            {"name": "gd", "batch_size": -1, "learning_rates": [1e-3, 5e-3, 1e-2], "momentum": 0.9},
+            {"name": "sgd", "batch_size": 1, "learning_rates": [1e-4, 5e-4, 1e-3], "momentum": 0.9},
+            {"name": "momentum", "batch_size": 32, "learning_rates": [5e-4, 1e-3, 5e-3], "momentum": 0.9},
+            {"name": "adam", "batch_size": 32, "learning_rates": [5e-5, 1e-4, 2e-4], "momentum": 0.9},
+        ]
+
     joint_cfgs = []
     for idx, joint_cfg in enumerate(search_cfg.get("joint_configs", []), start=1):
         joint_cfgs.append({
@@ -53,7 +70,7 @@ def _search_space(cfg):
     if not joint_cfgs:
         batch_base = int(search_cfg.get("joint_batch_base", 32))
         lr_base = float(search_cfg.get("joint_lr_base", 1e-4))
-        joint_batch_sizes = [int(batch) for batch in search_cfg.get("joint_batch_sizes", [4, 16, 32, 128, 512])]
+        joint_batch_sizes = [int(batch) for batch in search_cfg.get("joint_batch_sizes", [1, 4, 16, 32, 128, 512, -1])]
         for idx, batch_size in enumerate(joint_batch_sizes, start=1):
             joint_cfgs.append({
                 "name": f"E{idx}",
@@ -62,9 +79,8 @@ def _search_space(cfg):
             })
 
     return {
-        "optimizers": search_cfg.get("optimizers", ["gd", "adam"]),
-        "optimizer_screening_learning_rate": float(search_cfg.get("optimizer_screening_learning_rate", 1e-4)),
-        "optimizer_screening_batch_size": int(search_cfg.get("optimizer_screening_batch_size", 32)),
+        "optimizer_screening_epochs": int(search_cfg.get("optimizer_screening_epochs", 100)),
+        "optimizer_screening": optimizer_screening,
         "joint_configs": joint_cfgs,
     }
 
@@ -78,10 +94,23 @@ def _joint_batch_lr_configs(space):
             "learning_rate": float(joint_cfg["learning_rate"]),
             "label": (
                 f"{joint_cfg['name']}\n"
-                f"b={joint_cfg['batch_size']}, lr={_format_lr(joint_cfg['learning_rate'])}"
+                f"b={_batch_label(joint_cfg['batch_size'])}, lr={_format_lr(joint_cfg['learning_rate'])}"
             ),
         })
     return configs
+
+
+def _effective_batch_size(batch_size):
+    return 0 if int(batch_size) == -1 else int(batch_size)
+
+
+def _batch_label(batch_size):
+    batch_size = int(batch_size)
+    if batch_size == -1:
+        return "full"
+    if batch_size == 1:
+        return "online"
+    return str(batch_size)
 
 
 def _build_protocol_splits(strategy, train_val_idx, y, split_cfg):
@@ -138,7 +167,7 @@ def _build_protocol_splits(strategy, train_val_idx, y, split_cfg):
 
 def _fit_split_model(cfg, X_train, t_train, X_val, t_val, seed):
     epochs = cfg["training"]["epochs"]
-    batch_size = cfg["training"].get("batch_size", 32)
+    batch_size = _effective_batch_size(cfg["training"].get("batch_size", 32))
     shuffle = cfg["training"].get("shuffle", True)
     es_cfg = cfg["training"].get("early_stopping", {})
 
@@ -384,6 +413,10 @@ def _format_lr(lr):
     return f"{lr:.4f}".rstrip("0").rstrip(".")
 
 
+def _format_optimizer_screening_label(summary):
+    return f"{summary['optimizer']}\n{_batch_label(summary['batch_size'])}\nlr={_format_lr(summary['learning_rate'])}"
+
+
 def _retrain_final_model(X, t, y, train_val_idx, test_idx, cfg, seed, threshold, epochs):
     X_train = X[train_val_idx]
     X_test = X[test_idx]
@@ -399,7 +432,7 @@ def _retrain_final_model(X, t, y, train_val_idx, test_idx, cfg, seed, threshold,
 
     model = _make_perceptron(cfg, X_train.shape[1], seed)
     opt = build_optimizer(cfg["training"])
-    batch_size = cfg["training"].get("batch_size", 32)
+    batch_size = _effective_batch_size(cfg["training"].get("batch_size", 32))
     shuffle = cfg["training"].get("shuffle", True)
     rng = np.random.default_rng(seed)
 
@@ -555,42 +588,55 @@ def run_generalization(X, t, y, cfg, results_dir):
         path=os.path.join(results_dir, "scaling_comparison.png"),
     )
 
-    optimizer_summaries = []
-    for optimizer_name in space["optimizers"]:
-        opt_cfg = _copy_cfg(
-            cfg,
-            scaler_name=selected_scaler["scaler"],
-            training_overrides={
-                "learning_rate": space["optimizer_screening_learning_rate"],
-                "optimizer": optimizer_name,
-                "batch_size": space["optimizer_screening_batch_size"],
-            },
-        )
-        summary, rows = _evaluate_protocol(
-            X,
-            t,
-            y,
-            train_val_idx,
-            opt_cfg,
-            selected_strategy["strategy"],
-            baseline_seed,
-            phase="optimizer_screening",
-        )
-        optimizer_summaries.append(summary)
-        csv_rows.extend(rows)
+    optimizer_candidates = []
+    for optimizer_cfg in space["optimizer_screening"]:
+        for learning_rate in optimizer_cfg["learning_rates"]:
+            training_overrides = {
+                "learning_rate": learning_rate,
+                "optimizer": optimizer_cfg["name"],
+                "batch_size": optimizer_cfg["batch_size"],
+                "epochs": space["optimizer_screening_epochs"],
+            }
+            if optimizer_cfg["name"] == "momentum":
+                training_overrides["momentum"] = optimizer_cfg.get("momentum", 0.9)
 
-    _print_hyperparam_summary("optimizer", optimizer_summaries, "optimizer")
+            opt_cfg = _copy_cfg(
+                cfg,
+                scaler_name=selected_scaler["scaler"],
+                training_overrides=training_overrides,
+            )
+            summary, rows = _evaluate_protocol(
+                X,
+                t,
+                y,
+                train_val_idx,
+                opt_cfg,
+                selected_strategy["strategy"],
+                baseline_seed,
+                phase="optimizer_screening",
+            )
+            optimizer_candidates.append(summary)
+            csv_rows.extend(rows)
+            print(
+                f"  optimizer={summary['optimizer']} "
+                f"(batch={_batch_label(summary['batch_size'])}, lr={_format_lr(summary['learning_rate'])}): "
+                f"AUC-PR val={summary['mean_val_auc_pr']:.4f} ± {summary['std_val_auc_pr']:.4f}"
+            )
+
+    optimizer_summaries = []
+    for optimizer_cfg in space["optimizer_screening"]:
+        best_summary = _select_by_auc_pr(
+            [summary for summary in optimizer_candidates if summary["optimizer"] == optimizer_cfg["name"]]
+        )
+        optimizer_summaries.append(best_summary)
+
     selected_optimizer = _select_by_auc_pr(optimizer_summaries)
     plot_metric_bars(
-        [summary["optimizer"] for summary in optimizer_summaries],
+        [_format_optimizer_screening_label(summary) for summary in optimizer_summaries],
         [summary["mean_val_auc_pr"] for summary in optimizer_summaries],
         [summary["std_val_auc_pr"] for summary in optimizer_summaries],
         ylabel="AUC-PR en validación",
-        title=(
-            "Screening de optimizador "
-            f"(batch={space['optimizer_screening_batch_size']}, "
-            f"lr={_format_lr(space['optimizer_screening_learning_rate'])})"
-        ),
+        title="Screening de optimizador (mejor learning rate por método)",
         path=os.path.join(results_dir, "optimizer_screening_aucpr.png"),
     )
 
@@ -625,7 +671,7 @@ def run_generalization(X, t, y, cfg, results_dir):
 
     for summary in joint_summaries:
         print(
-            f"  {summary['joint_name']} (batch={summary['batch_size']}, "
+            f"  {summary['joint_name']} (batch={_batch_label(summary['batch_size'])}, "
             f"lr={_format_lr(summary['learning_rate'])}): "
             f"AUC-PR val={summary['mean_val_auc_pr']:.4f} ± {summary['std_val_auc_pr']:.4f}"
         )
@@ -686,7 +732,7 @@ def run_generalization(X, t, y, cfg, results_dir):
         title=(
             f"Curvas del modelo seleccionado ({selected_strategy['strategy_label']}, "
             f"scaler={selected_scaler['scaler']}, lr={_format_lr(selected_joint['learning_rate'])}, "
-            f"opt={selected_optimizer['optimizer']}, batch={selected_joint['batch_size']}, "
+            f"opt={selected_optimizer['optimizer']}, batch={_batch_label(selected_joint['batch_size'])}, "
             f"seed={selected_seed['seed']})"
         ),
         path=os.path.join(results_dir, "selected_model_learning_curve.png"),
@@ -778,13 +824,13 @@ def run_generalization(X, t, y, cfg, results_dir):
     print(f"  Estrategia seleccionada: {selected_strategy['strategy_label']} (forzada por criterio metodológico)")
     print(f"  Scaler seleccionado:    {selected_scaler['scaler']}")
     print(
-        f"  Screening optimizador:  batch={space['optimizer_screening_batch_size']}, "
-        f"lr={_format_lr(space['optimizer_screening_learning_rate'])}"
+        f"  Optimizer seleccionado: {selected_optimizer['optimizer']} "
+        f"(batch={_batch_label(selected_optimizer['batch_size'])}, "
+        f"lr={_format_lr(selected_optimizer['learning_rate'])})"
     )
-    print(f"  Optimizer seleccionado: {selected_optimizer['optimizer']}")
     print(f"  Config conjunta:        {selected_joint['joint_name']}")
     print(f"  Learning rate:          {selected_joint['learning_rate']}")
-    print(f"  Batch size:             {selected_joint['batch_size']}")
+    print(f"  Batch size:             {_batch_label(selected_joint['batch_size'])}")
     print(f"  Seed seleccionada:      {selected_seed['seed']}")
     print(f"  Threshold final:        {selected_seed['mean_threshold']:.4f} ± {selected_seed['std_threshold']:.4f}")
     print(f"  AUC-PR test:            {final_result['test_auc_pr']:.4f}")
