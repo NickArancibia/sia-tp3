@@ -2,7 +2,11 @@ import numpy as np
 
 
 def mse(y_true, y_pred):
-    return 0.5 * float(np.mean((y_true - y_pred) ** 2))
+    diff = y_true - y_pred
+    if diff.ndim == 1:
+        return 0.5 * float(np.mean(diff ** 2))
+    sum_axes = tuple(range(1, diff.ndim))
+    return 0.5 * float(np.mean(np.sum(diff ** 2, axis=sum_axes)))
 
 
 def mse_deriv(y_true, y_pred):
