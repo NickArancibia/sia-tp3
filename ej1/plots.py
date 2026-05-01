@@ -199,7 +199,8 @@ def plot_confusion_matrix(cm, path=None):
 
 
 def plot_threshold_sweep(thresholds, precisions, recalls, f1s, best_t, path=None,
-                         precisions_std=None, recalls_std=None, f1s_std=None):
+                         precisions_std=None, recalls_std=None, f1s_std=None,
+                         best_label="Umbral optimo"):
     fig, ax = plt.subplots(figsize=(9, 4))
     ax.plot(thresholds, precisions, label="Precision")
     ax.plot(thresholds, recalls, label="Recall")
@@ -214,7 +215,7 @@ def plot_threshold_sweep(thresholds, precisions, recalls, f1s, best_t, path=None
         ax.fill_between(thresholds, f1s - f1s_std, f1s + f1s_std,
                         alpha=0.15)
     ax.axvline(best_t, color="red", linestyle="--",
-               label=f"Umbral óptimo = {best_t:.3f}")
+               label=f"{best_label} = {best_t:.3f}")
     ax.set_xlabel("Umbral de detección")
     ax.set_ylabel("Score")
     ax.set_title("Barrido de umbral de detección de fraude")

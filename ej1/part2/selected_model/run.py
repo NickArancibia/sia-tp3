@@ -14,7 +14,7 @@ import pandas as pd
 from main_part2 import _make_perceptron, load_data
 from shared.config_loader import load_config
 from shared.losses import mse
-from shared.metrics import auc, confusion_matrix, pr_curve, precision_recall_f1, threshold_sweep
+from shared.metrics import auc, confusion_matrix, pr_curve, precision_recall_f1
 from shared.optimizers import build_optimizer
 from shared.preprocessing import build_scaler, stratified_kfold_indices, stratified_split
 from shared.regularization import EarlyStopping
@@ -34,6 +34,11 @@ SUMMARY_FIELDNAMES = [
     "momentum", "seed", "threshold", "epochs", "train_auc_pr", "test_auc_pr", "test_precision",
     "test_recall", "test_f1", "train_mse", "test_mse",
 ]
+
+THRESHOLD_MIN = 0.75
+THRESHOLD_MAX = 1.0
+THRESHOLD_STEP = 0.025
+THRESHOLD_GRID = np.round(np.arange(THRESHOLD_MIN, THRESHOLD_MAX + THRESHOLD_STEP / 2, THRESHOLD_STEP), 3)
 
 
 def copy_cfg(cfg, scaler_name=None, training_overrides=None):
@@ -68,6 +73,42 @@ def append_rows_csv(path, rows, fieldnames):
         if not exists:
             writer.writeheader()
         writer.writerows(rows)
+
+
+def fixed_threshold_grid():
+    return THRESHOLD_GRID.copy()
+
+
+def select_threshold_idx(thresholds, precisions, recalls):
+    thresholds = np.asarray(thresholds, dtype=float)
+    precisions = np.asarray(precisions, dtype=float)
+    recalls = np.asarray(recalls, dtype=float)
+    if len(thresholds) == 0:
+        raise ValueError("La grilla de thresholds no puede estar vacia")
+    order = np.lexsort((thresholds, -precisions, -recalls))
+    return int(order[0])
+
+
+def sweep_selected_thresholds(y_true, y_scores):
+    thresholds = fixed_threshold_grid()
+    precisions, recalls, f1s = [], [], []
+    for threshold in thresholds:
+        pred = (y_scores >= threshold).astype(int)
+        precision, recall, f1 = precision_recall_f1(y_true, pred)
+        precisions.append(precision)
+        recalls.append(recall)
+        f1s.append(f1)
+
+    precisions = np.asarray(precisions, dtype=float)
+    recalls = np.asarray(recalls, dtype=float)
+    f1s = np.asarray(f1s, dtype=float)
+    best_idx = select_threshold_idx(thresholds, precisions, recalls)
+    return thresholds, precisions, recalls, f1s, float(thresholds[best_idx])
+
+
+def selected_threshold(thresholds, precisions, recalls):
+    best_idx = select_threshold_idx(thresholds, precisions, recalls)
+    return float(np.asarray(thresholds, dtype=float)[best_idx])
 
 
 def build_s3_splits(train_val_idx, y, split_cfg):
@@ -139,7 +180,7 @@ def evaluate_split(cfg, X, t, y, split_spec, seed):
     model, train_losses, val_losses, stopped_at = fit_split_model(cfg, X_train, t_train, X_val, t_val, seed)
     train_scores = model.predict(X_train)
     val_scores = model.predict(X_val)
-    thresholds, th_precs, th_recs, th_f1s, best_t = threshold_sweep(y_val, val_scores)
+    thresholds, th_precs, th_recs, th_f1s, best_t = sweep_selected_thresholds(y_val, val_scores)
     train_pred = (train_scores >= best_t).astype(int)
     val_pred = (val_scores >= best_t).astype(int)
     train_precision, train_recall, train_f1 = precision_recall_f1(y_train, train_pred)
@@ -173,20 +214,20 @@ def evaluate_split(cfg, X, t, y, split_spec, seed):
     }
 
 
-def aggregate_threshold_curves(run_results, n_points=300):
-    lo = min(float(run["thresholds"][0]) for run in run_results)
-    hi = max(float(run["thresholds"][-1]) for run in run_results)
-    grid = np.array([lo]) if np.isclose(lo, hi) else np.linspace(lo, hi, n_points)
-    prec_curves = []
-    rec_curves = []
-    f1_curves = []
-    for run in run_results:
-        prec_curves.append(np.interp(grid, run["thresholds"], run["threshold_precisions"]))
-        rec_curves.append(np.interp(grid, run["thresholds"], run["threshold_recalls"]))
-        f1_curves.append(np.interp(grid, run["thresholds"], run["threshold_f1s"]))
-    prec_arr = np.asarray(prec_curves)
-    rec_arr = np.asarray(rec_curves)
-    f1_arr = np.asarray(f1_curves)
+def aggregate_threshold_curves(run_results):
+    grid = np.asarray(run_results[0]["thresholds"], dtype=float)
+    prec_curves = [np.asarray(run_results[0]["threshold_precisions"], dtype=float)]
+    rec_curves = [np.asarray(run_results[0]["threshold_recalls"], dtype=float)]
+    f1_curves = [np.asarray(run_results[0]["threshold_f1s"], dtype=float)]
+    for run in run_results[1:]:
+        if not np.allclose(run["thresholds"], grid):
+            raise ValueError("Todos los barridos de threshold deben usar la misma grilla fija")
+        prec_curves.append(np.asarray(run["threshold_precisions"], dtype=float))
+        rec_curves.append(np.asarray(run["threshold_recalls"], dtype=float))
+        f1_curves.append(np.asarray(run["threshold_f1s"], dtype=float))
+    prec_arr = np.asarray(prec_curves, dtype=float)
+    rec_arr = np.asarray(rec_curves, dtype=float)
+    f1_arr = np.asarray(f1_curves, dtype=float)
     return {
         "thresholds": grid,
         "precisions_mean": prec_arr.mean(axis=0),
@@ -205,6 +246,7 @@ def summarize_seed(run_results):
     mean_threshold = float(np.mean([run["threshold"] for run in run_results]))
     std_threshold = float(np.std([run["threshold"] for run in run_results]))
     mean_stopped_at = float(np.mean([run["stopped_at"] for run in run_results]))
+    threshold_curves = aggregate_threshold_curves(run_results)
     return {
         "mean_val_auc_pr": mean_val_auc_pr,
         "std_val_auc_pr": std_val_auc_pr,
@@ -212,7 +254,12 @@ def summarize_seed(run_results):
         "mean_threshold": mean_threshold,
         "std_threshold": std_threshold,
         "mean_stopped_at": mean_stopped_at,
-        "threshold_curves": aggregate_threshold_curves(run_results),
+        "selected_threshold": selected_threshold(
+            threshold_curves["thresholds"],
+            threshold_curves["precisions_mean"],
+            threshold_curves["recalls_mean"],
+        ),
+        "threshold_curves": threshold_curves,
     }
 
 
@@ -344,8 +391,8 @@ def retrain_final_model(X, t, y, train_val_idx, test_idx, cfg, seed, threshold, 
     }
 
 
-def confusion_rows(y_true, scores, step=0.025):
-    thresholds = np.arange(0.0, 1.0001, step)
+def confusion_rows(y_true, scores, thresholds=None):
+    thresholds = fixed_threshold_grid() if thresholds is None else np.asarray(thresholds, dtype=float)
     rows = []
     for threshold in thresholds:
         pred = (scores >= threshold).astype(int)
@@ -445,7 +492,7 @@ def main():
             "sample_idx": "",
             "train_size": len(train_val_idx),
             "val_size": len(test_idx),
-            "threshold_selected": float(selected_seed["mean_threshold"]),
+            "threshold_selected": float(selected_seed["selected_threshold"]),
             "train_mse": "",
             "val_mse": "",
             "train_auc_pr": "",
@@ -472,7 +519,7 @@ def main():
         }], RAW_FIELDNAMES)
 
     final_result = retrain_final_model(
-        X, t, y, train_val_idx, test_idx, run_cfg, int(selected_seed["seed"]), float(selected_seed["mean_threshold"]), final_epochs
+        X, t, y, train_val_idx, test_idx, run_cfg, int(selected_seed["seed"]), float(selected_seed["selected_threshold"]), final_epochs
     )
 
     test_rows = []
@@ -493,11 +540,11 @@ def main():
             "split_kind": "test",
             "split_id": 0,
             "epoch": "",
-            "threshold": float(selected_seed["mean_threshold"]),
+            "threshold": float(selected_seed["selected_threshold"]),
             "sample_idx": idx,
             "train_size": len(train_val_idx),
             "val_size": len(test_idx),
-            "threshold_selected": float(selected_seed["mean_threshold"]),
+            "threshold_selected": float(selected_seed["selected_threshold"]),
             "train_mse": "",
             "val_mse": "",
             "train_auc_pr": "",
@@ -525,7 +572,7 @@ def main():
     append_rows_csv(raw_path, test_rows, RAW_FIELDNAMES)
 
     confusion_rows_list = []
-    for row in confusion_rows(final_result["y_test"], final_result["test_scores"], step=0.025):
+    for row in confusion_rows(final_result["y_test"], final_result["test_scores"]):
         confusion_rows_list.append({
             "record_type": "confusion_point",
             "candidate_name": selected["candidate_name"],
@@ -544,7 +591,7 @@ def main():
             "sample_idx": "",
             "train_size": len(train_val_idx),
             "val_size": len(test_idx),
-            "threshold_selected": float(selected_seed["mean_threshold"]),
+            "threshold_selected": float(selected_seed["selected_threshold"]),
             "train_mse": "",
             "val_mse": "",
             "train_auc_pr": "",
@@ -581,7 +628,7 @@ def main():
         "batch_label": batch_label(run_cfg["training"]["batch_size"]),
         "momentum": run_cfg["training"].get("momentum", 0.9),
         "seed": int(selected_seed["seed"]),
-        "threshold": float(selected_seed["mean_threshold"]),
+        "threshold": float(selected_seed["selected_threshold"]),
         "epochs": final_epochs,
         "train_auc_pr": final_result["train_auc_pr"],
         "test_auc_pr": final_result["test_auc_pr"],
@@ -601,7 +648,7 @@ def main():
     print(f"  Batch:     {batch_label(run_cfg['training']['batch_size'])}")
     print(f"  LR:        {run_cfg['training']['learning_rate']}")
     print(f"  Seed:      {int(selected_seed['seed'])}")
-    print(f"  Threshold: {float(selected_seed['mean_threshold']):.4f}")
+    print(f"  Threshold: {float(selected_seed['selected_threshold']):.4f}")
     print(f"  AUC-PR:    {final_result['test_auc_pr']:.4f}")
     print(f"  F1:        {final_result['test_f1']:.4f}")
 

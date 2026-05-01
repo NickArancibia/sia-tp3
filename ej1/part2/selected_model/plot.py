@@ -72,6 +72,7 @@ def main():
         precisions_std=threshold_rows["generalization_gap_auc_pr"].astype(float).to_numpy(),
         recalls_std=threshold_rows["generalization_gap_f1"].astype(float).to_numpy(),
         f1s_std=threshold_rows["generalization_gap_mse"].astype(float).to_numpy(),
+        best_label="Umbral seleccionado",
     )
 
     test_rows = raw_df[raw_df["record_type"] == "test_output"].sort_values("sample_idx")
