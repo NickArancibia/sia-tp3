@@ -4,7 +4,7 @@ import numpy as np
 
 from shared.activations import activate, activate_deriv
 from shared.initializers import initialize_layers
-from shared.losses import mse
+from shared.losses import build_loss
 
 
 class MLP:
@@ -17,9 +17,9 @@ class MLP:
     beta: sigmoid steepness parameter (used with tanh/logistic)
     initializer: weight initialization method ("random_normal")
     init_scale: std for random_normal initializer
-    seed: base random seed (each layer uses seed + layer_index)
+    seed: base random seed (each layer uses an independent sub-stream)
     weight_decay: L2 regularization lambda (0 = no regularization)
-    loss_name: loss function ("mse" or "cross_entropy")
+    loss_name: loss function (sólo "mse" por ahora; agregar nuevas en shared/losses.py)
     """
 
     def __init__(
@@ -34,12 +34,26 @@ class MLP:
         weight_decay=0.0,
         loss_name="mse",
     ):
-        self.architecture = list(architecture)
+        architecture = list(architecture)
+        if len(architecture) < 2:
+            raise ValueError(
+                f"architecture must have at least 2 elements (n_in, n_out); "
+                f"got {architecture}"
+            )
+        if any(int(n) <= 0 for n in architecture):
+            raise ValueError(
+                f"all layer sizes must be positive ints; got {architecture}"
+            )
+        if weight_decay < 0:
+            raise ValueError(f"weight_decay must be >= 0, got {weight_decay}")
+
+        self.architecture = architecture
         self.hidden_activation = hidden_activation
         self.output_activation = output_activation
         self.beta = float(beta)
-        self.weight_decay = weight_decay
+        self.weight_decay = float(weight_decay)
         self.loss_name = loss_name
+        self._loss_fn, self._loss_deriv_fn = build_loss(loss_name)
         self.n_layers = len(architecture) - 1
 
         self._activations = []
@@ -95,15 +109,7 @@ class MLP:
         deltas = [None] * self.n_layers
 
         output = V_list[-1]
-        h_out = h_list[-1]
-
-        if self.loss_name == "mse":
-            delta = (output - t) * activate_deriv(output, self._activations[-1], self.beta)
-        elif self.loss_name == "cross_entropy" and self._activations[-1] == "logistic":
-            delta = output - t
-        else:
-            delta = (output - t) * activate_deriv(output, self._activations[-1], self.beta)
-
+        delta = (output - t) * activate_deriv(output, self._activations[-1], self.beta)
         deltas[-1] = delta
 
         for i in range(self.n_layers - 2, -1, -1):
@@ -168,7 +174,7 @@ class MLP:
             X_b, t_b = X[idx], t[idx]
 
             output, cache = self._forward(X_b)
-            loss_val = mse(t_b, output)
+            loss_val = self._loss_fn(t_b, output)
 
             grad_W_list, grad_b_list = self._backward(t_b, cache)
 
