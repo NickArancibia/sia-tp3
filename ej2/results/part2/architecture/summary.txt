@@ -1,0 +1,7 @@
+Mejor arquitectura (por val_acc): 784-64-32-10
+Ranking por val_acc:
+  784-64-32-10             : val=0.9436±0.0010  test=0.8379±0.0049  train=0.9959  gap=0.0523  params=52,650
+  784-64-10                : val=0.9416±0.0010  test=0.8386±0.0017  train=0.9919  gap=0.0504  params=50,890
+  784-40-20-10             : val=0.9385±0.0028  test=0.8301±0.0041  train=0.9922  gap=0.0537  params=32,430
+  784-32-10                : val=0.9304±0.0040  test=0.8167±0.0021  train=0.9800  gap=0.0495  params=25,450
+  784-10                   : val=0.8831±0.0075  test=0.7827±0.0028  train=0.9165  gap=0.0334  params=7,850

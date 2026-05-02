@@ -1,0 +1,445 @@
+% TP3 SIA - Perceptrón Simple y Multicapa
+% Presentación Beamer
+\documentclass[aspectratio=169,10pt]{beamer}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish]{babel}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath, amssymb}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{hyperref}
+
+\usetheme{metropolis}
+\setbeamertemplate{caption}[numbered]
+
+\title{TP3 — Perceptrón Simple y Multicapa}
+\subtitle{Sistemas de Inteligencia Artificial — ITBA 2026}
+\author{Equipo SIA}
+\date{}
+
+% Atajo para imágenes
+\newcommand{\fig}[2]{%
+  \begin{center}
+    \includegraphics[width=#1\linewidth]{#2}
+  \end{center}}
+
+\begin{document}
+
+\maketitle
+
+% =============================================================
+\section{Marco teórico y objetivos}
+
+\begin{frame}{Objetivos del TP3}
+  \begin{itemize}
+    \item \textbf{Ejercicio 1}: Estudio de fraude online con perceptrón simple
+      lineal vs no lineal (knowledge distillation de \emph{BigModel}).
+    \item \textbf{Ejercicio 2}: Clasificación de dígitos con MLP, variando
+      tasa de aprendizaje, arquitectura y mecanismo de optimización.
+    \item \textbf{Ejercicio 3}: Mejorar el clasificador con
+      \texttt{more\_digits.csv} buscando \textbf{accuracy $\geq 98\%$}.
+  \end{itemize}
+  \vspace{0.5em}
+  Esta presentación se centra en \textbf{EJ2 y EJ3}.
+\end{frame}
+
+\begin{frame}{Arquitectura del MLP (Clase 11, Clase 13 - Backprop)}
+  \textbf{Forward}: $V_j^m = \theta\!\left(\sum_k V_k^{m-1} \cdot w_{jk}^m\right)$
+  con $V^0 = x$, $O = V^M$.
+
+  \textbf{Loss (MSE)}: $E(w) = \frac{1}{2N} \sum_{\mu=1}^N \sum_i \big(\zeta_i^\mu - O_i^\mu\big)^2$
+
+  \textbf{Backward (regla de la cadena)}:
+  \[
+    \delta^{(L)} = (O - t) \odot f'(h^{(L)}), \quad
+    \delta^{(m)} = \big(W^{(m+1)\top}\delta^{(m+1)}\big) \odot f'(h^{(m)})
+  \]
+  \[
+    \frac{\partial E}{\partial W^{(m)}} = \frac{1}{N}\,\delta^{(m)}\,V^{(m-1)\top}, \quad
+    w^{\text{nuevo}} = w^{\text{ant}} - \eta\,\frac{\partial E}{\partial w}
+  \]
+
+  \textbf{Capacidad y generalización (Clase 13 - Regularización)}:
+  más capacidad $\Rightarrow$ más riesgo de overfitting; brecha
+  train$-$validación crece con la capacidad.
+\end{frame}
+
+% =============================================================
+\section{EJ2 — Clasificación de dígitos}
+
+\begin{frame}{Setup del EJ2}
+  \textbf{Datos}: \texttt{digits.csv} para entrenamiento+hiperparámetros;
+  \texttt{digits\_test.csv} como ``mundo real''.
+
+  \textbf{Hallazgo crítico}: el train \textbf{no contiene la clase 8}
+  (sólo 0--7 y 9). El test sí (243 muestras del 8).
+  $\Rightarrow$ techo de accuracy en test $\approx 90\%$ por construcción
+  (todos los 8 se predicen mal).
+  \vspace{0.5em}
+
+  \textbf{Pipeline}:
+  \begin{itemize}
+    \item Stratified split 80/20 train/val sobre \texttt{digits.csv}.
+    \item Z-score scaling de pixels (fit en train, transform en val/test).
+    \item One-hot encoding $(N, 10)$ aunque train sólo vea 9 clases.
+    \item MLP con sigmoide en la salida + MSE (mismo material teórico).
+    \item Early stopping (patience=15), 100 epochs máx.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Distribución de clases (train, val, test)}
+  \begin{table}
+    \centering
+    \scriptsize
+    \begin{tabular}{lrrrrrrrrrr}
+      \toprule
+      Dataset / clase & 0 & 1 & 2 & 3 & 4 & 5 & 6 & 7 & 8 & 9 \\
+      \midrule
+      \texttt{digits.csv} (12449)    & 1480 & 1685 & 1489 & 1532 & 1460 & \textbf{271} & 1479 & 1566 & \textbf{0} & 1487 \\
+      \texttt{more\_digits.csv} (15741) & 1776 & 2022 & 1787 & 1839 & 1752 & 542 & 1775 & 1879 & 585 & 1784 \\
+      \texttt{digits\_test.csv} (2497) & 245 & 283 & 258 & 252 & 245 & 223 & 239 & 257 & \textbf{243} & 252 \\
+      \bottomrule
+    \end{tabular}
+  \end{table}
+  \vspace{0.4em}
+  \begin{itemize}
+    \item EJ2 train: \textbf{sin clase 8}, clase 5 con sólo 271 muestras.
+    \item Test SIEMPRE balanceado e incluye 8 $\Rightarrow$ techo
+      $\sim$90\% en EJ2 por construcción.
+    \item EJ3 train: incluye 8 (585) y más balanceado en general.
+  \end{itemize}
+\end{frame}
+
+\subsection{Variantes de tasa de aprendizaje}
+
+\begin{frame}{Sweep de learning rate (Adam, arch [784,40,20,10])}
+  \fig{0.85}{../ej2/results/part2/learning_rate/val_acc_curves.png}
+  \scriptsize Curvas de val accuracy por época. lr muy chicos (1e-4)
+  no convergen en 100 epochs; lr muy grandes (1e-1) divergen u oscilan.
+\end{frame}
+
+\begin{frame}{Best val accuracy por lr}
+  \begin{columns}
+    \begin{column}{0.5\linewidth}
+      \fig{1.0}{../ej2/results/part2/learning_rate/val_acc_bar.png}
+    \end{column}
+    \begin{column}{0.5\linewidth}
+      \fig{1.0}{../ej2/results/part2/learning_rate/test_acc_bar.png}
+    \end{column}
+  \end{columns}
+  \scriptsize 3 seeds. Mejor lr seleccionado por val\_acc promedio.
+\end{frame}
+
+\subsection{Sweep 2D: batch\_size × learning rate}
+
+\begin{frame}{Heatmap batch\_size × lr (Adam, arch [784,64,32,10])}
+  \fig{0.85}{../ej2/results/part2/batch_lr/val_acc_heatmap.png}
+  \scriptsize 5 batch \texttimes\ 5 lr \texttimes\ 3 seeds. La zona óptima
+  se concentra en lr $\in [10^{-3}, 5{\cdot}10^{-3}]$ con batch
+  $\in [8, 128]$. Online (batch=1) es lento y requiere lr más chico.
+\end{frame}
+
+\begin{frame}{Mejor val accuracy por batch\_size}
+  \fig{0.7}{../ej2/results/part2/batch_lr/best_per_batch.png}
+  \scriptsize Para cada batch\_size se reporta el mejor lr encontrado.
+  Mini-batch (8--128) es el sweet spot entre estabilidad (full) y
+  velocidad de adaptación (online).
+\end{frame}
+
+\subsection{Variantes de arquitectura}
+
+\begin{frame}{Sweep de arquitectura (Adam lr=1e-3)}
+  \fig{0.85}{../ej2/results/part2/architecture/val_acc_curves.png}
+  \scriptsize 6 arquitecturas: desde regresión logística hasta 3 capas
+  ocultas. Arquitecturas más grandes convergen más lento pero llegan a
+  mejor val\_acc.
+\end{frame}
+
+\begin{frame}{Capacidad vs accuracy (Clase 13 - Regularización)}
+  \fig{0.7}{../ej2/results/part2/architecture/capacity_vs_acc.png}
+  \scriptsize Train > val > test (test tiene la clase 8 ausente del train).
+  Brecha train$-$val crece con capacidad: indicio de overfitting.
+\end{frame}
+
+\subsection{Variantes de optimizador}
+
+\begin{frame}{Optimizadores (arch [784,40,20,10])}
+  \fig{0.85}{../ej2/results/part2/optimizer/val_acc_curves.png}
+  \scriptsize Adam y Momentum convergen mucho más rápido que GD vanilla
+  (Clase 9 - Optimización). SGD online tiene alta varianza por paso.
+\end{frame}
+
+\begin{frame}{Comparación final: optimizadores}
+  \begin{columns}
+    \begin{column}{0.5\linewidth}
+      \fig{1.0}{../ej2/results/part2/optimizer/val_acc_bar.png}
+    \end{column}
+    \begin{column}{0.5\linewidth}
+      \fig{1.0}{../ej2/results/part2/optimizer/elapsed_bar.png}
+    \end{column}
+  \end{columns}
+  \scriptsize Trade-off accuracy / tiempo. SGD online: muy lento por
+  iterar 1 sample por step.
+\end{frame}
+
+\subsection{Sweep 2D: optimizer × learning rate}
+
+\begin{frame}{Heatmap optimizer × lr}
+  \fig{0.85}{../ej2/results/part2/optimizer_lr/val_acc_heatmap.png}
+  \scriptsize 3 opt \texttimes\ 6 lr \texttimes\ 3 seeds. Cada optimizador
+  tiene su \emph{rango óptimo de lr distinto}: GD necesita lr alto, Adam
+  trabaja con lr más chico. Esto justifica por qué los comparamos cada uno
+  con su mejor lr en el modelo seleccionado.
+\end{frame}
+
+\begin{frame}{Curvas: val accuracy vs lr (1 línea por optimizador)}
+  \fig{0.85}{../ej2/results/part2/optimizer_lr/val_acc_vs_lr.png}
+  \scriptsize Adam plateau-ea más temprano (lr $\sim$10$^{-3}$),
+  Momentum/GD necesitan lr más alto. Confirma la observación de que cada
+  optimizador tiene su propia escala de tasa de aprendizaje.
+\end{frame}
+
+\subsection{Variantes de activación intermedia}
+
+\begin{frame}{Activación de capas ocultas (tanh / logistic / relu)}
+  \fig{0.8}{../ej2/results/part2/activation/val_acc_curves.png}
+  \scriptsize Mismo arch [784,64,32,10], Adam lr=$10^{-3}$, batch=32. Las
+  3 activaciones del material teórico (Clase 10.1 + 10.2) más relu como
+  alternativa moderna.
+\end{frame}
+
+\begin{frame}{Comparación final: activación intermedia}
+  \begin{columns}
+    \begin{column}{0.5\linewidth}
+      \fig{1.0}{../ej2/results/part2/activation/val_acc_bar.png}
+    \end{column}
+    \begin{column}{0.5\linewidth}
+      \fig{1.0}{../ej2/results/part2/activation/test_acc_bar.png}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\subsection{Modelo seleccionado y métricas finales}
+
+\begin{frame}{Modelo seleccionado para EJ2}
+  Combo elegido tras los sweeps:
+  \begin{itemize}
+    \item Arquitectura: $[784, 64, 32, 10]$ (52,650 parámetros)
+    \item Optimizador: Adam ($\eta=10^{-3}$, $\beta_1=0.9$, $\beta_2=0.999$)
+    \item Batch size: 32, init\_scale=0.1
+    \item 5 seeds, hasta 150 epochs con early stopping (patience=20)
+  \end{itemize}
+  \vspace{0.5em}
+  \textbf{Resultados (5 seeds, mean $\pm$ std)}:
+  \begin{itemize}
+    \item Test accuracy: $0.8413 \pm 0.0018$
+    \item Val accuracy:  $0.9470 \pm 0.0022$
+    \item Macro F1:      $0.7942 \pm 0.0020$
+    \item F1 dígito 8: \textbf{0.000} (ausente del train)
+    \item F1 dígito 5: $0.749$ (subrepresentado, 271 muestras)
+    \item Otros F1: $0.84 - 0.95$
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Modelo seleccionado — Curvas de aprendizaje (5 seeds)}
+  \begin{columns}
+    \begin{column}{0.5\linewidth}
+      \fig{1.0}{../ej2/results/part2/selected_model/loss_curves.png}
+    \end{column}
+    \begin{column}{0.5\linewidth}
+      \fig{1.0}{../ej2/results/part2/selected_model/accuracy_curves.png}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Modelo seleccionado — Confusion Matrix (test, promedio)}
+  \fig{0.6}{../ej2/results/part2/selected_model/confusion_matrix.png}
+  \scriptsize Fila 8 toda mal (no se entrenó con 8s). Confusión típica:
+  el 8 se mezcla con 3, 5, 9.
+\end{frame}
+
+\begin{frame}{Métricas por clase (test)}
+  \fig{0.85}{../ej2/results/part2/selected_model/per_class_metrics.png}
+  \scriptsize F1 del dígito 8 = 0 (no aparece en train). El 5 también
+  baja por escasez de muestras.
+\end{frame}
+
+\begin{frame}{Análisis de confusiones por dígito (EJ2, test)}
+  \begin{table}
+    \centering
+    \scriptsize
+    \begin{tabular}{c|c|l|l}
+      \toprule
+      Real & Acc clase & Top-1 confusión & Top-2 confusión \\
+      \midrule
+      0 & 0.984 & $\to$3: 0.4\% & $\to$6: 0.4\% \\
+      1 & 0.986 & $\to$2: 0.4\% & $\to$3: 0.4\% \\
+      2 & 0.930 & $\to$0: 1.6\% & $\to$3: 1.6\% \\
+      3 & 0.972 & $\to$2: 1.2\% & $\to$7: 0.8\% \\
+      4 & 0.955 & $\to$9: 2.5\% & $\to$6: 0.8\% \\
+      \textbf{5} & \textbf{0.759} & \textbf{$\to$3: 8.0\%} & \textbf{$\to$6: 4.5\%} \\
+      6 & 0.954 & $\to$0: 2.1\% & $\to$4: 1.3\% \\
+      7 & 0.926 & $\to$2: 3.1\% & $\to$9: 1.9\% \\
+      \textbf{8} & \textbf{0.000} & \textbf{$\to$5: 23.0\%} & \textbf{$\to$3: 21.8\%} \\
+      9 & 0.912 & $\to$7: 2.8\% & $\to$4: 2.4\% \\
+      \bottomrule
+    \end{tabular}
+  \end{table}
+  \vspace{0.3em}
+  \scriptsize \textbf{Observación clave (Nick)}: el 8, ausente del train,
+  se reparte casi en partes iguales entre 5 (23\%) y 3 (22\%) — el modelo
+  ``los manda a cualquier lado'', exactamente como predijimos. El 5 es la
+  clase peor aprendida (271 muestras en train) y se confunde con 3 y 6.
+\end{frame}
+
+\subsection{Robustez al ruido}
+
+\begin{frame}{Robustez al ruido gaussiano (opcional)}
+  \fig{0.75}{../ej2/results/part2/noise_robustness/noise_curve.png}
+  \scriptsize Test accuracy vs $\sigma$ del ruido $\mathcal{N}(0, \sigma^2)$
+  agregado a los pixels (luego clip a [0,1]). 5 seeds de ruido.
+  Degradación monótona; el modelo no es robusto a $\sigma > 0.3$.
+\end{frame}
+
+% =============================================================
+\section{EJ3 — Mejor accuracy con \texttt{more\_digits.csv}}
+
+\begin{frame}{Setup del EJ3}
+  \textbf{Cambio principal}: el train pasa a ser \texttt{more\_digits.csv}
+  ($\sim$15.7k muestras, \textbf{10 clases incluyendo el 8}).
+
+  \textbf{Test}: el mismo \texttt{digits\_test.csv} del EJ2 (mundo real)
+  $\Rightarrow$ comparación directa con EJ2.
+
+  \textbf{Objetivo}: accuracy $\geq 98\%$ en test.
+
+  \textbf{Técnicas adoptadas}:
+  \begin{itemize}
+    \item Arquitectura más grande: $[784, 256, 128, 10]$ (235,146 params).
+    \item Más epochs (150) + patience (20).
+    \item Weight decay liviano ($\lambda=10^{-5}$) — regularización L2
+      (Clase 13 - Regularización).
+    \item Init scale más chico (0.05) para mejor estabilidad.
+    \item Batch size 64 (más grande $\Rightarrow$ menos varianza por step).
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Comparación de datasets (\emph{aislando el efecto de los datos})}
+  \fig{0.85}{../ej3/results/part2/data_comparison/val_acc_curves.png}
+  \scriptsize Misma arquitectura $[784,128,64,10]$, mismo test, sólo cambia el train.
+\end{frame}
+
+\begin{frame}{Test accuracy: digits vs more\_digits}
+  \fig{0.6}{../ej3/results/part2/data_comparison/test_acc_bar.png}
+  Salto de $\sim$80\% a $>$95\% sólo por incluir la clase 8 en train
+  y tener $\sim$26\% más datos.
+\end{frame}
+
+\begin{frame}{F1 por clase (test): digits vs more\_digits}
+  \fig{0.85}{../ej3/results/part2/data_comparison/per_class_f1.png}
+  \scriptsize El dígito 8 pasa de F1=0 (no se entrena) a $\sim$0.95.
+\end{frame}
+
+\begin{frame}{EJ3 modelo seleccionado — accuracy curves}
+  \fig{0.85}{../ej3/results/part2/selected_model/accuracy_curves.png}
+\end{frame}
+
+\begin{frame}{EJ3 — Confusion matrix (test, promedio sobre 5 seeds)}
+  \fig{0.55}{../ej3/results/part2/selected_model/confusion_matrix.png}
+\end{frame}
+
+\begin{frame}{EJ3 — Métricas por clase}
+  \fig{0.85}{../ej3/results/part2/selected_model/per_class_metrics.png}
+\end{frame}
+
+\begin{frame}{EJ3 — Análisis de confusiones por dígito (test)}
+  \begin{table}
+    \centering
+    \scriptsize
+    \begin{tabular}{c|c|l|l}
+      \toprule
+      Real & Acc clase & Top-1 confusión & Top-2 confusión \\
+      \midrule
+      0 & 0.988 & $\to$2: 0.4\% & $\to$7: 0.4\% \\
+      1 & 0.989 & $\to$2: 0.4\% & $\to$5: 0.4\% \\
+      2 & 0.957 & $\to$0: 1.2\% & $\to$6: 0.8\% \\
+      3 & 0.980 & $\to$5: 0.8\% & $\to$2: 0.4\% \\
+      4 & 0.980 & $\to$9: 1.2\% & $\to$2: 0.4\% \\
+      5 & 0.879 & $\to$3: 3.1\% & $\to$6: 3.1\% \\
+      6 & 0.958 & $\to$0: 1.7\% & $\to$1: 1.3\% \\
+      7 & 0.961 & $\to$2: 1.2\% & $\to$9: 1.2\% \\
+      \textbf{8} & \textbf{0.914} & \textbf{$\to$3: 2.5\%} & \textbf{$\to$5: 1.6\%} \\
+      9 & 0.933 & $\to$0: 1.6\% & $\to$4: 1.6\% \\
+      \bottomrule
+    \end{tabular}
+  \end{table}
+  \vspace{0.3em}
+  \scriptsize El 8 pasa de acc=0.000 (EJ2) a 0.914 (EJ3) — confirma el
+  efecto de incluirlo en el train. Las confusiones residuales del 5 y 8
+  son con 3, 5, 6 — patrón consistente con similitud visual.
+\end{frame}
+
+\begin{frame}{EJ3 — Resultados finales y discusión del 98\%}
+  \textbf{Mejor resultado obtenido (3 seeds)}:
+  \begin{itemize}
+    \item Test accuracy: $0.9546 \pm 0.0007$ (95.5\%)
+    \item Val accuracy:  $0.9603 \pm 0.0001$
+    \item Macro F1:      $0.9536$ (vs $0.7942$ en EJ2)
+    \item F1 mínimo (dígito 5): $0.918$ (vs $0.749$ en EJ2)
+  \end{itemize}
+  \vspace{0.4em}
+  \textbf{No alcanzamos 98\% en test}. Lo que obtuvimos:
+  \begin{itemize}
+    \item Train acc $\to$ 0.999 con val acc plateau en $\sim$0.96
+      (overfitting clásico, Clase 13 - Regularización).
+    \item El gap train$-$val es de $\sim$0.04, indicando que la red
+      está saturando en su capacidad de generalización con este pipeline.
+  \end{itemize}
+  \textbf{Para llegar a 98\% se necesitarían}: data augmentation
+  (rotaciones, traslaciones — Clase 13), arquitecturas convolucionales,
+  o ensembling. Quedó fuera del scope de un MLP básico.
+\end{frame}
+
+% =============================================================
+\section{Conclusiones}
+
+\begin{frame}{Conclusiones}
+  \begin{itemize}
+    \item \textbf{EJ2}: techo de test accuracy en $\sim$84\% explicado por
+      la \textbf{ausencia de la clase 8 en train} (sólo se entrena con
+      0--7 y 9). El modelo aprende muy bien las clases que ve
+      (val\_acc $\sim$95\%) pero falla sistemáticamente en el 8 — los
+      manda mayoritariamente al 5 (23\%) y al 3 (22\%).
+      Mejor combo: $[784,64,32,10]$ + Adam ($\eta=10^{-3}$), batch=32.
+    \item \textbf{Sweep 2D batch \texttimes\ lr}: zona óptima en
+      lr $\in [10^{-3}, 5{\cdot}10^{-3}]$ con batch $\in [8, 128]$.
+      Mini-batch domina sobre online y full.
+    \item \textbf{Sweep 2D opt \texttimes\ lr}: cada optimizador tiene su
+      ventana óptima de lr (Adam $\sim$10$^{-3}$, Momentum/GD $\sim$10$^{-2}$).
+      Adam y Momentum dominan claramente a GD vanilla (0.94 vs 0.43).
+    \item \textbf{Activación intermedia}: tanh y relu rinden similar; logistic
+      es la peor en MLPs no-superficiales (saturación, derivada chica).
+    \item \textbf{EJ3}: pasar a \texttt{more\_digits.csv} sube test
+      accuracy de $\sim$0.85 a $\sim$0.95 (arquitectura idéntica),
+      \textbf{exclusivamente por incluir la clase 8 y más muestras}.
+    \item El factor más influyente fue la \textbf{cobertura del dataset
+      de entrenamiento}, no la arquitectura ni el optimizador (Clase 12).
+    \item Robustez al ruido: el pipeline colapsa con $\sigma \geq 0.05$
+      aplicado en el dominio original — el scaler z-score amplifica el ruido.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Referencias al material}
+  \begin{itemize}
+    \item Clase 9 — Optimización (GD, SGD, Momentum, Adam)
+    \item Clase 11 — Perceptrón Multicapa (forward pass, T. Aprox. Universal)
+    \item Clase 12 — Métricas y Sobreajuste (accuracy, F1, confusion matrix)
+    \item Clase 13 — Backprop (regla de la cadena, $\delta$ por capa)
+    \item Clase 13 — Regularización (early stopping, L2 weight decay)
+  \end{itemize}
+\end{frame}
+
+\end{document}

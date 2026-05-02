@@ -1,0 +1,30 @@
+EJ3 — Comparación digits.csv vs more_digits.csv (mismo test):
+
+digits:
+  test_acc = 0.8480 ± 0.0019
+  val_acc  = 0.9551 ± 0.0029
+  F1 dígito 0: 0.9517±0.0072
+  F1 dígito 1: 0.9677±0.0040
+  F1 dígito 2: 0.8740±0.0063
+  F1 dígito 3: 0.8362±0.0072
+  F1 dígito 4: 0.9124±0.0060
+  F1 dígito 5: 0.7586±0.0257
+  F1 dígito 6: 0.9217±0.0051
+  F1 dígito 7: 0.9259±0.0140
+  F1 dígito 8: 0.0000±0.0000
+  F1 dígito 9: 0.8624±0.0051
+
+more_digits:
+  test_acc = 0.9402 ± 0.0010
+  val_acc  = 0.9474 ± 0.0012
+  F1 dígito 0: 0.9604±0.0015
+  F1 dígito 1: 0.9784±0.0043
+  F1 dígito 2: 0.9351±0.0092
+  F1 dígito 3: 0.9354±0.0024
+  F1 dígito 4: 0.9512±0.0021
+  F1 dígito 5: 0.8940±0.0014
+  F1 dígito 6: 0.9417±0.0033
+  F1 dígito 7: 0.9413±0.0036
+  F1 dígito 8: 0.9178±0.0120
+  F1 dígito 9: 0.9327±0.0038
+
