@@ -723,3 +723,22 @@ pyrightconfig.json
 .ionide
 
 # End of https://www.toptal.com/developers/gitignore/api/visualstudiocode,macos,latex,jetbrains,pycharm,python
+
+# Carpeta de exploración / experimentos — nunca commitear
+_experimental/
+
+# Material pedagógico (PDFs de clases + enunciado): el equipo ya los tiene
+# por separado, no inflar el repo con ~19MB de PDFs.
+material/
+
+# Datasets descargados / zips de documentación pesados.
+*.zip
+
+# Pickles intermedios de resultados — reproducibles ejecutando los run.py
+# correspondientes. Se commitean sólo los PNGs, summary.txt y modelos .npz.
+*.pkl
+
+# Notas personales del usuario / drafts.
+mi-propuesta.md
+notas-personales.md
+
