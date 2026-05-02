@@ -20,7 +20,7 @@ training:
   weight_decay: 0.0
   early_stopping:
     enabled: true
-    patience: 20
+    patience: 50
     monitor: "val_loss"
   stop_criteria:
     epsilon: 0.001
@@ -43,3 +43,27 @@ experiment:
   log_every: 1
   log_level: "INFO"
   save_model: true
+
+search:
+  seeds: [0, 1, 2, 3, 4]
+  batch_sizes: [1, 32, 64, 128, -1]
+  learning_rates: [0.1, 0.01, 0.001, 0.0001]
+  architectures:
+    - {name: "1L-32",       hidden: [32]}
+    - {name: "1L-64",       hidden: [64]}
+    - {name: "1L-128",      hidden: [128]}
+    - {name: "1L-256",      hidden: [256]}
+    - {name: "2L-64-32",    hidden: [64, 32]}
+    - {name: "2L-128-64",   hidden: [128, 64]}
+    - {name: "2L-64-64",    hidden: [64, 64]}
+    - {name: "2L-40-20",    hidden: [40, 20]}
+    - {name: "3L-64-32-16", hidden: [64, 32, 16]}
+    - {name: "3L-64-64-64", hidden: [64, 64, 64]}
+  hidden_activations: ["tanh", "logistic", "relu"]
+  optimizer_candidates:
+    - {name: "gd_online",  optimizer: "gd",       batch_size: 1,   lr_source: "online"}
+    - {name: "gd_mini32",  optimizer: "gd",       batch_size: 32,  lr_source: "mini32"}
+    - {name: "gd_mini64",  optimizer: "gd",       batch_size: 64,  lr_source: "mini64"}
+    - {name: "gd_full",    optimizer: "gd",       batch_size: -1,  lr_source: "full"}
+    - {name: "momentum",   optimizer: "momentum", batch_size: 32,  lr_source: "mini32", momentum: 0.9}
+    - {name: "adam",       optimizer: "adam",     batch_size: 32,  lr_source: "mini32"}
