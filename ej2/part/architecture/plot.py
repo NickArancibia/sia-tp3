@@ -1,4 +1,4 @@
-"""Bar chart de test accuracy por arquitectura, ordenado de mejor a peor."""
+"""Bar charts de val y test accuracy por arquitectura, ordenados de mejor a peor."""
 import os
 import sys
 
@@ -22,11 +22,15 @@ def _save(fig, path):
     plt.close(fig)
 
 
-def plot_arch_bars(summary_df, path):
-    df = summary_df.sort_values("mean_test_acc", ascending=True)
+def plot_arch_bars(summary_df, metric, path):
+    mean_col = f"mean_{metric}_acc"
+    std_col = f"std_{metric}_acc"
+    label = "Val accuracy" if metric == "val" else "Test accuracy"
+
+    df = summary_df.sort_values(mean_col, ascending=True)
     labels = df["config_name"].tolist()
-    means = df["mean_test_acc"].to_numpy()
-    stds = df["std_test_acc"].to_numpy()
+    means = df[mean_col].to_numpy()
+    stds = df[std_col].to_numpy()
     n_params = df["n_params"].to_numpy()
 
     fig, ax = plt.subplots(figsize=(10, 5))
@@ -39,8 +43,8 @@ def plot_arch_bars(summary_df, path):
                 f"{m:.4f} ± {std:.4f}  ({int(np_):,} params)",
                 va="center", fontsize=8)
 
-    ax.set_xlabel("Test accuracy")
-    ax.set_title("Test accuracy por arquitectura (media ± std, 5 semillas)\nOrdenado de peor a mejor")
+    ax.set_xlabel(label)
+    ax.set_title(f"{label} por arquitectura (media ± std, 5 semillas)\nOrdenado de peor a mejor")
     margin = max(stds) * 3 + 0.02
     ax.set_xlim(max(0, means.min() - margin), min(1.02, means.max() + margin + 0.12))
     fig.tight_layout()
@@ -57,11 +61,13 @@ def main():
     summary_df = pd.read_csv(summary_path)
     summary_df["n_params"] = summary_df["n_params"].astype(int)
 
-    plot_arch_bars(summary_df, path=os.path.join(RESULTS_DIR, "test_acc_bar.png"))
+    plot_arch_bars(summary_df, "val",  path=os.path.join(RESULTS_DIR, "val_acc_bar.png"))
+    plot_arch_bars(summary_df, "test", path=os.path.join(RESULTS_DIR, "test_acc_bar.png"))
 
-    best = summary_df.loc[summary_df["mean_test_acc"].idxmax()]
+    best = summary_df.loc[summary_df["mean_val_acc"].idxmax()]
     print(f"\nMejor arquitectura:")
     print(f"  {best['config_name']}: {best['architecture']}")
+    print(f"  val_acc  = {best['mean_val_acc']:.4f} ± {best['std_val_acc']:.4f}")
     print(f"  test_acc = {best['mean_test_acc']:.4f} ± {best['std_test_acc']:.4f}")
     print(f"  params   = {int(best['n_params']):,}")
 
