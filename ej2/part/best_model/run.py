@@ -38,6 +38,7 @@ RESULTS_DIR = os.path.join(EJ2_DIR, "results", "part", "best_model")
 BATCH_LR_SUMMARY = os.path.join(EJ2_DIR, "results", "part", "batch_lr", "summary.csv")
 ARCH_SUMMARY = os.path.join(EJ2_DIR, "results", "part", "architecture", "summary.csv")
 ACTIV_SUMMARY = os.path.join(EJ2_DIR, "results", "part", "activation", "summary.csv")
+OPTIMIZER_SUMMARY = os.path.join(EJ2_DIR, "results", "part", "optimizer", "summary.csv")
 
 RAW_FIELDS = [
     "seed", "architecture", "hidden_activation", "optimizer",
@@ -52,11 +53,18 @@ SUMMARY_FIELDS = [
 
 
 def _resolve_best_config(cfg, n_features, n_classes):
-    bl_summary = pd.read_csv(BATCH_LR_SUMMARY) if os.path.exists(BATCH_LR_SUMMARY) else None
     arch_summary = pd.read_csv(ARCH_SUMMARY) if os.path.exists(ARCH_SUMMARY) else None
     activ_summary = pd.read_csv(ACTIV_SUMMARY) if os.path.exists(ACTIV_SUMMARY) else None
 
-    lr = best_lr_for_source(bl_summary, "mini32") if bl_summary is not None else 0.001
+    # Use Adam lr from optimizer experiment (batch_lr used GD, so its lr is incompatible)
+    if os.path.exists(OPTIMIZER_SUMMARY):
+        opt_df = pd.read_csv(OPTIMIZER_SUMMARY)
+        adam_rows = opt_df[opt_df["optimizer"] == "adam"]
+        lr = float(adam_rows.loc[adam_rows["mean_val_acc"].idxmax(), "learning_rate"])
+        print(f"LR (experimento optimizer/Adam):  {lr:.0e}")
+    else:
+        lr = 0.001
+        print(f"LR (default):                     {lr:.0e}")
     bs = 32
 
     if arch_summary is not None:

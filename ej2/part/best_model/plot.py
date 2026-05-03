@@ -19,6 +19,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from shared.digit_dataset_loader import load_dataset
 from shared.mlp import MLP
 from shared.preprocessing import ZScoreScaler
 from shared.utils import plot_confusion_matrix, plot_misclassified_samples, save_fig
@@ -28,9 +29,9 @@ TEST_CSV = os.path.join(EJ2_DIR, "data", "digits_test.csv")
 
 
 def _load_test(n_classes):
-    df = pd.read_csv(TEST_CSV, header=None)
-    X = df.iloc[:, 1:].to_numpy(dtype=float) / 255.0
-    y = df.iloc[:, 0].to_numpy(dtype=int)
+    df = load_dataset(TEST_CSV)
+    X = np.stack(df["image"].values)
+    y = df["label"].values.astype(int)
     return X, y
 
 
@@ -61,17 +62,8 @@ def _compute_metrics(y_true, y_pred, n_classes):
 def plot_f1_per_digit(f1_scores, path):
     n = len(f1_scores)
     digits = list(range(n))
-    colors = []
-    for d in digits:
-        if d == 8:
-            colors.append("tomato")
-        elif d == 5:
-            colors.append("orange")
-        else:
-            colors.append("steelblue")
-
     fig, ax = plt.subplots(figsize=(9, 4))
-    bars = ax.bar(digits, f1_scores, color=colors, alpha=0.85)
+    bars = ax.bar(digits, f1_scores, color="steelblue", alpha=0.85)
     for bar, f1 in zip(bars, f1_scores):
         ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.005,
                 f"{f1:.3f}", ha="center", va="bottom", fontsize=8)
@@ -82,14 +74,6 @@ def plot_f1_per_digit(f1_scores, path):
     ax.set_ylabel("F1-score")
     ax.set_ylim(0, 1.08)
     ax.set_title("F1-score por dígito (mejor modelo)")
-
-    from matplotlib.patches import Patch
-    legend_elements = [
-        Patch(facecolor="steelblue", alpha=0.85, label="Dígito regular"),
-        Patch(facecolor="orange", alpha=0.85, label="Dígito 5 (sub-representado)"),
-        Patch(facecolor="tomato", alpha=0.85, label="Dígito 8 (ausente en train)"),
-    ]
-    ax.legend(handles=legend_elements, fontsize=8)
     fig.tight_layout()
     save_fig(fig, path)
     print(f"Guardado: {path}")

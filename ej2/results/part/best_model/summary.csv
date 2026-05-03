@@ -1,0 +1,2 @@
+architecture,hidden_activation,optimizer,batch_size,learning_rate,mean_val_acc,std_val_acc,mean_test_acc,std_test_acc,mean_macro_f1,std_macro_f1,mean_epochs
+"[784, 128, 64, 10]",relu,adam,32,0.001,0.9616405307599518,0.0028386590421749292,0.8639967961553865,0.001653165193476207,0.8175768148879639,0.0016950708670824008,88.8

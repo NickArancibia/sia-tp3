@@ -1,0 +1,21 @@
+adam_betas:
+- 0.9
+- 0.999
+adam_eps: 1.0e-08
+architecture:
+- 784
+- 128
+- 64
+- 10
+batch_size: 32
+best_seed: 0
+hidden_activation: relu
+learning_rate: 0.001
+optimizer: adam
+output_activation: logistic
+seeds_run:
+- 0
+- 1
+- 2
+- 3
+- 4
