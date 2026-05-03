@@ -70,27 +70,34 @@
 % =============================================================
 \section{EJ2 — Clasificación de dígitos}
 
-\begin{frame}{Setup del EJ2}
-  \textbf{Datos}: \texttt{digits.csv} para entrenamiento+hiperparámetros;
-  \texttt{digits\_test.csv} como ``mundo real''.
+\begin{frame}{Contexto del ejercicio}
+  \textbf{Problema}: CompanyX necesita un sistema automático para clasificar
+  dígitos escritos a mano (0--9) a partir de imágenes de $28\times28$ pixels.
 
-  \textbf{Hallazgo crítico}: el train \textbf{no contiene la clase 8}
-  (sólo 0--7 y 9). El test sí (243 muestras del 8).
-  $\Rightarrow$ techo de accuracy en test $\approx 90\%$ por construcción
-  (todos los 8 se predicen mal).
-  \vspace{0.5em}
+  \textbf{Modelo}: Perceptrón Multicapa (MLP) con salida de 10 neuronas
+  (una por dígito), entrenado con MSE.
 
-  \textbf{Pipeline}:
-  \begin{itemize}
-    \item Stratified split 80/20 train/val sobre \texttt{digits.csv}.
-    \item Z-score scaling de pixels (fit en train, transform en val/test).
-    \item One-hot encoding $(N, 10)$ aunque train sólo vea 9 clases.
-    \item MLP con sigmoide en la salida + MSE (mismo material teórico).
-    \item Early stopping (patience=15), 100 epochs máx.
-  \end{itemize}
+  \textbf{Estrategia experimental}:
+  \begin{enumerate}
+    \item Ver dependencia entre batch size y learning rate
+    \item Ver variación de accuracy según optimizador y learning rate
+    \item Explorar arquitecturas: ¿más capas o más nodos por capa?
+    \item Evaluar funciones de activación en capas ocultas
+    \item Analizar el mejor modelo sobre el conjunto de test
+  \end{enumerate}
+
+  \textbf{División}: 80\% train / 20\% val (estratificado) sobre
+  \texttt{digits.csv}; \texttt{digits\_test.csv} como ``mundo real''.
 \end{frame}
 
-\begin{frame}{Distribución de clases (train, val, test)}
+\begin{frame}{Análisis del dataset — Distribución de clases}
+  \fig{0.75}{../ej2/results/part/best_model/class_distribution.png}
+  \scriptsize Distribución de muestras por dígito en el conjunto de
+  entrenamiento. Se observa una marcada subrepresentación del 5 y
+  la ausencia total del 8.
+\end{frame}
+
+\begin{frame}{Análisis del dataset — Observaciones e hipótesis}
   \begin{table}
     \centering
     \scriptsize
@@ -98,120 +105,197 @@
       \toprule
       Dataset / clase & 0 & 1 & 2 & 3 & 4 & 5 & 6 & 7 & 8 & 9 \\
       \midrule
-      \texttt{digits.csv} (12449)    & 1480 & 1685 & 1489 & 1532 & 1460 & \textbf{271} & 1479 & 1566 & \textbf{0} & 1487 \\
-      \texttt{more\_digits.csv} (15741) & 1776 & 2022 & 1787 & 1839 & 1752 & 542 & 1775 & 1879 & 585 & 1784 \\
-      \texttt{digits\_test.csv} (2497) & 245 & 283 & 258 & 252 & 245 & 223 & 239 & 257 & \textbf{243} & 252 \\
+      Train (12\,449)    & 1480 & 1685 & 1489 & 1532 & 1460 & \textbf{271} & 1479 & 1566 & \textbf{0} & 1487 \\
+      Test (2\,497)  & 245 & 283 & 258 & 252 & 245 & 223 & 239 & 257 & \textbf{243} & 252 \\
       \bottomrule
     \end{tabular}
   \end{table}
-  \vspace{0.4em}
+  \vspace{0.3em}
+  \textbf{Observaciones}:
   \begin{itemize}
-    \item EJ2 train: \textbf{sin clase 8}, clase 5 con sólo 271 muestras.
-    \item Test SIEMPRE balanceado e incluye 8 $\Rightarrow$ techo
-      $\sim$90\% en EJ2 por construcción.
-    \item EJ3 train: incluye 8 (585) y más balanceado en general.
+    \item El train \textbf{no contiene la clase 8} — el modelo nunca
+      verá un ejemplo de ese dígito.
+    \item La clase 5 tiene solo \textbf{271 muestras} ($\sim$2\% del train)
+      contra $\sim$12\% para el resto.
+    \item El test sí incluye 243 muestras del 8 ($\sim$10\% del test).
+  \end{itemize}
+  \vspace{0.3em}
+  \textbf{Hipótesis}:
+  \begin{itemize}
+    \item El 8 será sistemáticamente mal clasificado
+      (techo de test accuracy $\approx$ 90\%).
+    \item El dígito 5 tendrá menor F1 por la escasez de muestras.
+
   \end{itemize}
 \end{frame}
 
-\subsection{Variantes de tasa de aprendizaje}
+% ------------------------------------------------------------------
+\subsection{Exp1 — Batch size y learning rate}
 
-\begin{frame}{Sweep de learning rate (Adam, arch [784,40,20,10])}
-  \fig{0.85}{../ej2/results/part2/learning_rate/val_acc_curves.png}
-  \scriptsize Curvas de val accuracy por época. lr muy chicos (1e-4)
-  no convergen en 100 epochs; lr muy grandes (1e-1) divergen u oscilan.
+\begin{frame}{Exp1 — Parámetros iniciales}
+  \begin{table}
+    \centering
+    \begin{tabular}{ll}
+      \toprule
+      Parámetro & Valor \\
+      \midrule
+      Arquitectura & [784, 40, 20, 10] \\
+      Activación oculta & tanh \\
+      Activación de salida & logistic \\
+      $\beta$ (pendiente sigmoidea) & 1.0 \\
+      Inicialización & random\_normal, init\_scale=0.1 \\
+      Optimizador & GD (gradiente descendente) \\
+      Épocas máximas & 500 \\
+      Función de pérdida & MSE \\
+      Early stopping & patience=50, $\varepsilon=0.001$ \\
+      Seeds & [0, 1, 2, 3, 4] \\
+      \bottomrule
+    \end{tabular}
+  \end{table}
+  \scriptsize Valores por defecto; se varían batch size y learning rate
+  en este experimento.
 \end{frame}
 
-\begin{frame}{Best val accuracy por lr}
+\begin{frame}{Exp1 — Batch size $\times$ learning rate}
+  \fig{0.65}{../ej2/results/part/batch_lr/heatmap_val_acc.png}
+  \scriptsize 5 batch sizes $\times$ 5 learning rates $\times$ 5 seeds.
+  La zona óptima se concentra en lr $\in [10^{-3}, 5{\cdot}10^{-3}]$
+  con batch $\in [8, 128]$.
+\end{frame}
+
+\begin{frame}{Exp1 — ¿Online o mini-batch?}
   \begin{columns}
-    \begin{column}{0.5\linewidth}
-      \fig{1.0}{../ej2/results/part2/learning_rate/val_acc_bar.png}
+    \begin{column}{0.55\linewidth}
+      \fig{1.0}{../ej2/results/part/batch_lr/bar_time.png}
     \end{column}
-    \begin{column}{0.5\linewidth}
-      \fig{1.0}{../ej2/results/part2/learning_rate/test_acc_bar.png}
+    \begin{column}{0.45\linewidth}
+      \textbf{Hallazgos}:
+      \begin{itemize}
+        \item El entrenamiento \textbf{online} (batch=1) logra la
+          mejor val accuracy, pero es $\sim$10$\times$ más lento.
+        \item Mini-batch 32 y 64 obtienen resultados comparables
+          con mucho menor tiempo de entrenamiento.
+        \item El learning rate adecuado \textbf{depende del batch size}:
+          batch grande necesita lr más alto; online necesita lr más bajo.
+      \end{itemize}
+      \vspace{0.5em}
+      \textbf{Decisión}: batch size = \textbf{32}.  Buen balance
+      entre velocidad y accuracy; además permite flexibilidad en
+      la elección de lr.
     \end{column}
   \end{columns}
-  \scriptsize 3 seeds. Mejor lr seleccionado por val\_acc promedio.
 \end{frame}
 
-\subsection{Sweep 2D: batch\_size × learning rate}
+% ------------------------------------------------------------------
+\subsection{Exp2 — Optimizadores}
 
-\begin{frame}{Heatmap batch\_size × lr (Adam, arch [784,64,32,10])}
-  \fig{0.85}{../ej2/results/part2/batch_lr/val_acc_heatmap.png}
-  \scriptsize 5 batch \texttimes\ 5 lr \texttimes\ 3 seeds. La zona óptima
-  se concentra en lr $\in [10^{-3}, 5{\cdot}10^{-3}]$ con batch
-  $\in [8, 128]$. Online (batch=1) es lento y requiere lr más chico.
+\begin{frame}{Exp2 — Parámetros iniciales}
+  \begin{table}
+    \centering
+    \begin{tabular}{ll}
+      \toprule
+      Parámetro & Valor \\
+      \midrule
+      Arquitectura & [784, 40, 20, 10] \\
+      Activación oculta & tanh \\
+      Activación de salida & logistic \\
+      $\beta$ (pendiente sigmoidea) & 1.0 \\
+      Inicialización & random\_normal, init\_scale=0.1 \\
+      Batch size & 32 \\
+      Épocas máximas & 500 \\
+      Función de pérdida & MSE \\
+      Early stopping & patience=50, $\varepsilon=0.001$ \\
+      Seeds & [0, 1, 2, 3, 4] \\
+      \bottomrule
+    \end{tabular}
+  \end{table}
+  \scriptsize Se varían optimizador y learning rate.
 \end{frame}
 
-\begin{frame}{Mejor val accuracy por batch\_size}
-  \fig{0.7}{../ej2/results/part2/batch_lr/best_per_batch.png}
-  \scriptsize Para cada batch\_size se reporta el mejor lr encontrado.
-  Mini-batch (8--128) es el sweet spot entre estabilidad (full) y
-  velocidad de adaptación (online).
+\begin{frame}{Exp2 — Convergencia: GD}
+  \fig{0.75}{../ej2/results/part/optimizer/convergence_gd.png}
+  \scriptsize GD vanilla: converge lento y requiere lr alto. Con lr bajo
+  no alcanza buen mínimo en 500 épocas.
 \end{frame}
 
-\subsection{Variantes de arquitectura}
-
-\begin{frame}{Sweep de arquitectura (Adam lr=1e-3)}
-  \fig{0.85}{../ej2/results/part2/architecture/val_acc_curves.png}
-  \scriptsize 6 arquitecturas: desde regresión logística hasta 3 capas
-  ocultas. Arquitecturas más grandes convergen más lento pero llegan a
-  mejor val\_acc.
+\begin{frame}{Exp2 — Convergencia: Momentum ($\alpha = 0.9$)}
+  \fig{0.75}{../ej2/results/part/optimizer/convergence_momentum.png}
+  \scriptsize Momentum acelera la convergencia al acumular gradiente
+  histórico, pero no adapta la tasa por parámetro.
 \end{frame}
 
-\begin{frame}{Capacidad vs accuracy (Clase 13 - Regularización)}
-  \fig{0.7}{../ej2/results/part2/architecture/capacity_vs_acc.png}
-  \scriptsize Train > val > test (test tiene la clase 8 ausente del train).
-  Brecha train$-$val crece con capacidad: indicio de overfitting.
+\begin{frame}{Exp2 — Convergencia: Adam ($\beta_1{=}0.9$, $\beta_2{=}0.999$, $\varepsilon{=}10^{-8}$)}
+  \fig{0.75}{../ej2/results/part/optimizer/convergence_adam.png}
+  \scriptsize Adam adapta lr por parámetro (momentos de primer y segundo
+  orden), logrando convergencia rápida y estable con lr $= 10^{-3}$.
 \end{frame}
 
-\subsection{Variantes de optimizador}
-
-\begin{frame}{Optimizadores (arch [784,40,20,10])}
-  \fig{0.85}{../ej2/results/part2/optimizer/val_acc_curves.png}
-  \scriptsize Adam y Momentum convergen mucho más rápido que GD vanilla
-  (Clase 9 - Optimización). SGD online tiene alta varianza por paso.
+\begin{frame}{Exp2 — Cada optimizador tiene su learning rate óptimo}
+  \fig{0.65}{../ej2/results/part/optimizer/heatmap_val_acc.png}
+  \scriptsize 3 optimizadores $\times$ 4 learning rates $\times$ 5 seeds.
+  GD necesita lr alto ($\sim$0.1), Momentum funciona en rango
+  intermedio, Adam rinde mejor con lr $\sim 10^{-3}$.
 \end{frame}
 
-\begin{frame}{Comparación final: optimizadores}
+\begin{frame}{Exp2 — ¿Por qué Adam con lr $= 10^{-3}$?}
+  \begin{itemize}
+    \item \textbf{Adam} adapta la tasa de aprendizaje por parámetro
+      (momentos de primer y segundo orden), por lo que trabaja bien
+      con lr bajos y converge rápido.
+    \item \textbf{GD} no tiene adaptación: necesita lr alto para
+      moverse, pero eso genera inestabilidad.
+    \item \textbf{Momentum} queda en un punto intermedio: acelera
+      en direcciones consistentes pero no adapta por parámetro.
+    \item Conclusión: \textbf{Adam con lr $= 10^{-3}$} como
+      optimizador base para los experimentos siguientes.
+  \end{itemize}
+\end{frame}
+
+% ------------------------------------------------------------------
+\subsection{Exp3 — Arquitecturas}
+
+\begin{frame}{Exp3 — ¿Más capas o más nodos por capa?}
+  \textbf{Pregunta}: dada una cantidad de parámetros, ¿es mejor
+  distribuirlos en más capas (profundidad) o en más nodos por capa
+  (anchura)?
+
+  \vspace{0.5em}
+  \textbf{Arquitecturas evaluadas}:
+  \begin{itemize}
+    \item 1 capa oculta: [784, 32, 10], [784, 64, 10],
+      [784, 128, 10], [784, 256, 10]
+    \item 2 capas ocultas: [784, 40, 20, 10],
+      [784, 64, 32, 10], [784, 64, 64, 10],
+      [784, 128, 64, 10]
+    \item 3 capas ocultas: [784, 64, 32, 16, 10],
+      [784, 64, 64, 64, 10]
+  \end{itemize}
+
+  \vspace{0.5em}
+  \textbf{Configuración}: Adam lr$=10^{-3}$, batch=32, ReLU,
+  5 seeds, early stopping.
+
+  \emph{Resultados en desarrollo.}
+\end{frame}
+
+\begin{frame}{Exp3 — Resultados preliminares}
   \begin{columns}
     \begin{column}{0.5\linewidth}
-      \fig{1.0}{../ej2/results/part2/optimizer/val_acc_bar.png}
+      \fig{1.0}{../ej2/results/part/architecture/val_acc_bar.png}
     \end{column}
     \begin{column}{0.5\linewidth}
-      \fig{1.0}{../ej2/results/part2/optimizer/elapsed_bar.png}
+      \fig{1.0}{../ej2/results/part/architecture/test_acc_bar.png}
     \end{column}
   \end{columns}
-  \scriptsize Trade-off accuracy / tiempo. SGD online: muy lento por
-  iterar 1 sample por step.
+  \scriptsize Tendencia: mayor capacidad mejora val accuracy pero
+  aumenta el gap train–val (overfitting). 2 capas ocultas con
+  suficientes nodos (128-64) logran el mejor balance.
 \end{frame}
 
-\subsection{Sweep 2D: optimizer × learning rate}
+% ------------------------------------------------------------------
+\subsection{Exp4 — Funciones de activación}
 
-\begin{frame}{Heatmap optimizer × lr}
-  \fig{0.85}{../ej2/results/part2/optimizer_lr/val_acc_heatmap.png}
-  \scriptsize 3 opt \texttimes\ 6 lr \texttimes\ 3 seeds. Cada optimizador
-  tiene su \emph{rango óptimo de lr distinto}: GD necesita lr alto, Adam
-  trabaja con lr más chico. Esto justifica por qué los comparamos cada uno
-  con su mejor lr en el modelo seleccionado.
-\end{frame}
-
-\begin{frame}{Curvas: val accuracy vs lr (1 línea por optimizador)}
-  \fig{0.85}{../ej2/results/part2/optimizer_lr/val_acc_vs_lr.png}
-  \scriptsize Adam plateau-ea más temprano (lr $\sim$10$^{-3}$),
-  Momentum/GD necesitan lr más alto. Confirma la observación de que cada
-  optimizador tiene su propia escala de tasa de aprendizaje.
-\end{frame}
-
-\subsection{Variantes de activación intermedia}
-
-\begin{frame}{Activación de capas ocultas (tanh / logistic / relu)}
-  \fig{0.8}{../ej2/results/part2/activation/val_acc_curves.png}
-  \scriptsize Mismo arch [784,64,32,10], Adam lr=$10^{-3}$, batch=32. Las
-  3 activaciones del material teórico (Clase 10.1 + 10.2) más relu como
-  alternativa moderna.
-\end{frame}
-
-\begin{frame}{Comparación final: activación intermedia}
+\begin{frame}{Exp4 — Activaciones en capas ocultas}
   \begin{columns}
     \begin{column}{0.5\linewidth}
       \fig{1.0}{../ej2/results/part2/activation/val_acc_bar.png}
@@ -220,31 +304,66 @@
       \fig{1.0}{../ej2/results/part2/activation/test_acc_bar.png}
     \end{column}
   \end{columns}
+  \scriptsize Arquitecturas [784, 256, 10] y [784, 128, 64, 10],
+  Adam lr$=10^{-3}$, batch=32. Tres funciones de activación
+  evaluadas: \textbf{logistic}, \textbf{tanh} y \textbf{ReLU}.
 \end{frame}
 
-\subsection{Modelo seleccionado y métricas finales}
+\begin{frame}{Exp4 — Convergencia por activación}
+  \fig{0.85}{../ej2/results/part2/activation/val_acc_curves.png}
+  \scriptsize ReLU converge más rápido y alcanza la mejor val accuracy.
+  Logistic sufre de saturación (derivada pequeña) y converge más lento.
+\end{frame}
 
-\begin{frame}{Modelo seleccionado para EJ2}
-  Combo elegido tras los sweeps:
+\begin{frame}{Exp4 — Conclusión: elección de activación}
+  \begin{table}
+    \centering
+    \scriptsize
+    \begin{tabular}{llcc}
+      \toprule
+      Activación & Arquitectura & Val accuracy & Test accuracy \\
+      \midrule
+      ReLU     & [784, 128, 64, 10] & $0.9616 \pm 0.003$ & $0.8640 \pm 0.002$ \\
+      Tanh     & [784, 128, 64, 10] & $0.9497 \pm 0.003$ & $0.8515 \pm 0.002$ \\
+      Logistic & [784, 128, 64, 10] & $0.9485 \pm 0.004$ & $0.8467 \pm 0.002$ \\
+      \bottomrule
+    \end{tabular}
+  \end{table}
+  \vspace{0.5em}
   \begin{itemize}
-    \item Arquitectura: $[784, 64, 32, 10]$ (52,650 parámetros)
-    \item Optimizador: Adam ($\eta=10^{-3}$, $\beta_1=0.9$, $\beta_2=0.999$)
-    \item Batch size: 32, init\_scale=0.1
+    \item Las tres funciones de activación dan resultados aceptables.
+    \item \textbf{ReLU} es superior: no satura para valores positivos
+      y propaga gradientes más eficazmente.
+    \item \textbf{Logistic} es la más lenta en convergencia
+      (derivada pequeña en saturación).
+    \item Decisión: usamos \textbf{ReLU} como activación por defecto
+      para los experimentos siguientes.
+  \end{itemize}
+\end{frame}
+
+% ------------------------------------------------------------------
+\subsection{Exp5 — Modelo seleccionado}
+
+\begin{frame}{Exp5 — Configuración del mejor modelo}
+  \begin{itemize}
+    \item \textbf{Arquitectura}: [784, 128, 64, 10] (109\,386 parámetros)
+    \item \textbf{Optimizador}: Adam ($\eta=10^{-3}$,
+      $\beta_1=0.9$, $\beta_2=0.999$, $\varepsilon=10^{-8}$)
+    \item \textbf{Batch size}: 32, init\_scale=0.1
+    \item \textbf{Activación oculta}: ReLU
     \item 5 seeds, hasta 150 epochs con early stopping (patience=20)
   \end{itemize}
   \vspace{0.5em}
   \textbf{Resultados (5 seeds, mean $\pm$ std)}:
   \begin{itemize}
-    \item Test accuracy: $0.8413 \pm 0.0018$
-    \item Val accuracy:  $0.9470 \pm 0.0022$
-    \item Macro F1:      $0.7942 \pm 0.0020$
-    \item F1 dígito 8: \textbf{0.000} (ausente del train)
-    \item F1 dígito 5: $0.749$ (subrepresentado, 271 muestras)
-    \item Otros F1: $0.84 - 0.95$
+    \item Val accuracy:  $0.9616 \pm 0.0028$
+    \item Test accuracy: $0.8640 \pm 0.0017$
+    \item Macro F1:      $0.8176 \pm 0.0017$
   \end{itemize}
+  
 \end{frame}
 
-\begin{frame}{Modelo seleccionado — Curvas de aprendizaje (5 seeds)}
+\begin{frame}{Exp5 — Curvas de aprendizaje (5 seeds)}
   \begin{columns}
     \begin{column}{0.5\linewidth}
       \fig{1.0}{../ej2/results/part2/selected_model/loss_curves.png}
@@ -255,19 +374,20 @@
   \end{columns}
 \end{frame}
 
-\begin{frame}{Modelo seleccionado — Confusion Matrix (test, promedio)}
-  \fig{0.6}{../ej2/results/part2/selected_model/confusion_matrix.png}
-  \scriptsize Fila 8 toda mal (no se entrenó con 8s). Confusión típica:
-  el 8 se mezcla con 3, 5, 9.
+\begin{frame}{Exp5 — Matriz de confusión (test, promedio 5 seeds)}
+  \fig{0.55}{../ej2/results/part2/selected_model/confusion_matrix.png}
+  \scriptsize La fila del 8 es toda incorrecta: el modelo nunca vio un 8.
+  Se confunde principalmente con 5 (23\%) y 3 (22\%).
 \end{frame}
 
-\begin{frame}{Métricas por clase (test)}
+\begin{frame}{Exp5 — Métricas por clase (test)}
   \fig{0.85}{../ej2/results/part2/selected_model/per_class_metrics.png}
-  \scriptsize F1 del dígito 8 = 0 (no aparece en train). El 5 también
-  baja por escasez de muestras.
+  \scriptsize F1 del dígito 8 = 0.000 (ausente en train). El dígito 5
+  (271 muestras) también tiene F1 bajo ($\sim$0.75). Demás dígitos: F1
+  $\geq$ 0.84.
 \end{frame}
 
-\begin{frame}{Análisis de confusiones por dígito (EJ2, test)}
+\begin{frame}{Exp5 — Análisis de confusiones por dígito (test)}
   \begin{table}
     \centering
     \scriptsize
@@ -289,20 +409,12 @@
     \end{tabular}
   \end{table}
   \vspace{0.3em}
-  \scriptsize \textbf{Observación clave (Nick)}: el 8, ausente del train,
-  se reparte casi en partes iguales entre 5 (23\%) y 3 (22\%) — el modelo
-  ``los manda a cualquier lado'', exactamente como predijimos. El 5 es la
-  clase peor aprendida (271 muestras en train) y se confunde con 3 y 6.
+  \scriptsize El 8, ausente del train, se reparte entre 5 (23\%) y 3 (22\%)
+  — el modelo ``los manda a cualquier lado''. El 5, con solo 271
+  muestras en train, es la clase peor aprendida.
 \end{frame}
 
 \subsection{Robustez al ruido}
-
-\begin{frame}{Robustez al ruido gaussiano (opcional)}
-  \fig{0.75}{../ej2/results/part2/noise_robustness/noise_curve.png}
-  \scriptsize Test accuracy vs $\sigma$ del ruido $\mathcal{N}(0, \sigma^2)$
-  agregado a los pixels (luego clip a [0,1]). 5 seeds de ruido.
-  Degradación monótona; el modelo no es robusto a $\sigma > 0.3$.
-\end{frame}
 
 % =============================================================
 \section{EJ3 — Mejor accuracy con \texttt{more\_digits.csv}}
@@ -406,29 +518,24 @@
 % =============================================================
 \section{Conclusiones}
 
-\begin{frame}{Conclusiones}
+\begin{frame}{Conclusiones EJ2}
   \begin{itemize}
-    \item \textbf{EJ2}: techo de test accuracy en $\sim$84\% explicado por
-      la \textbf{ausencia de la clase 8 en train} (sólo se entrena con
-      0--7 y 9). El modelo aprende muy bien las clases que ve
-      (val\_acc $\sim$95\%) pero falla sistemáticamente en el 8 — los
-      manda mayoritariamente al 5 (23\%) y al 3 (22\%).
-      Mejor combo: $[784,64,32,10]$ + Adam ($\eta=10^{-3}$), batch=32.
-    \item \textbf{Sweep 2D batch \texttimes\ lr}: zona óptima en
-      lr $\in [10^{-3}, 5{\cdot}10^{-3}]$ con batch $\in [8, 128]$.
-      Mini-batch domina sobre online y full.
-    \item \textbf{Sweep 2D opt \texttimes\ lr}: cada optimizador tiene su
-      ventana óptima de lr (Adam $\sim$10$^{-3}$, Momentum/GD $\sim$10$^{-2}$).
-      Adam y Momentum dominan claramente a GD vanilla (0.94 vs 0.43).
-    \item \textbf{Activación intermedia}: tanh y relu rinden similar; logistic
-      es la peor en MLPs no-superficiales (saturación, derivada chica).
-    \item \textbf{EJ3}: pasar a \texttt{more\_digits.csv} sube test
-      accuracy de $\sim$0.85 a $\sim$0.95 (arquitectura idéntica),
-      \textbf{exclusivamente por incluir la clase 8 y más muestras}.
-    \item El factor más influyente fue la \textbf{cobertura del dataset
-      de entrenamiento}, no la arquitectura ni el optimizador (Clase 12).
-    \item Robustez al ruido: el pipeline colapsa con $\sigma \geq 0.05$
-      aplicado en el dominio original — el scaler z-score amplifica el ruido.
+    \item \textbf{Exp1 (batch $\times$ lr)}: el learning rate óptimo depende
+      del batch size. Online logra la mejor accuracy pero es 10$\times$ más
+      lento. Se elige batch=32 como compromiso eficiencia/rendimiento.
+    \item \textbf{Exp2 (optimizadores)}: cada optimizador tiene su rango
+      óptimo de lr. Adam con lr=$10^{-3}$ domina en accuracy y velocidad.
+    \item \textbf{Exp3 (arquitecturas)}: más capacidad mejora val accuracy
+      pero aumenta el gap train–val. 2 capas ocultas con suficientes nodos
+      ofrecen el mejor balance.
+    \item \textbf{Exp4 (activación)}: ReLU, tanh y logistic dan resultados
+      aceptables. ReLU es preferida por convergencia más rápida y sin
+      saturación en valores positivos.
+    \item \textbf{Exp5 (mejor modelo)}: [784, 128, 64, 10] + ReLU + Adam
+      lr=$10^{-3}$, batch=32. Val acc $\sim$96\%, test acc $\sim$86\%.
+    \item \textbf{Techo de test accuracy $\approx$ 90\%} por la ausencia
+      del dígito 8 en train. El 8 se confunde con 5 y 3; el dígito 5
+      (271 muestras) también sufre.
   \end{itemize}
 \end{frame}
 
