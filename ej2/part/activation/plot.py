@@ -33,6 +33,17 @@ def main():
 
     summary_df = pd.read_csv(summary_path)
 
+    val_data = {
+        row["config_name"]: (row["mean_val_acc"], row["std_val_acc"])
+        for _, row in summary_df.iterrows()
+    }
+    plot_multi_bar(
+        val_data,
+        title="Val accuracy por activación oculta (media ± std, 5 semillas)",
+        ylabel="Val accuracy",
+        path=os.path.join(RESULTS_DIR, "val_acc_bar.png"),
+    )
+
     acc_data = {
         row["config_name"]: (row["mean_test_acc"], row["std_test_acc"])
         for _, row in summary_df.iterrows()

@@ -98,19 +98,39 @@ def main():
     raw_path = os.path.join(RESULTS_DIR, "raw.csv")
     curves_path = os.path.join(RESULTS_DIR, "curves.csv")
     summary_path = os.path.join(RESULTS_DIR, "summary.csv")
-    for p in (raw_path, curves_path, summary_path):
-        if os.path.exists(p):
-            os.remove(p)
+
+    # Load already-completed (config_name, seed) pairs for resume support
+    done_pairs: set = set()
+    if os.path.exists(raw_path):
+        existing = pd.read_csv(raw_path)
+        done_pairs = set(zip(existing["config_name"], existing["seed"].astype(int)))
+        print(f"Resumiendo: {len(done_pairs)} (config, seed) ya completados.")
+    else:
+        for p in (raw_path, curves_path, summary_path):
+            if os.path.exists(p):
+                os.remove(p)
 
     summaries = []
     for arch_name, full_arch in arch_specs:
         for act in activations:
             cname = f"{act}_{arch_name}"
+            remaining = [s for s in seeds if (cname, s) not in done_pairs]
+            if not remaining:
+                # Rebuild summary from existing data
+                raw_df = pd.read_csv(raw_path)
+                s = summarize_group(raw_df, cname,
+                                    extra_fields=["hidden_activation", "arch_name", "architecture"])
+                summaries = [x for x in summaries if x["config_name"] != cname]
+                summaries.append(s)
+                pd.DataFrame(summaries, columns=SUMMARY_FIELDS).to_csv(summary_path, index=False)
+                print(f"\n[skip] {cname} — val_acc = {s['mean_val_acc']:.4f} ± {s['std_val_acc']:.4f}")
+                continue
+
             print(f"\n{'='*50}")
             print(f"Activación: {act}  Arquitectura: {arch_name} {full_arch}")
             print(f"{'='*50}")
 
-            for seed in seeds:
+            for seed in remaining:
                 X_tr, y_tr, X_va, y_va, X_te = split_scale(X_all, y_all, X_test_raw, cfg, seed)
                 result = train(X_tr, y_tr, X_va, y_va, X_te, y_test, n_classes,
                                full_arch, act, opt_cfg, bs, seed, max_epochs, patience)
