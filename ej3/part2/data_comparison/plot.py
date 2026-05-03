@@ -1,4 +1,4 @@
-"""EJ3 part2 — Plots para comparación digits vs more_digits."""
+"""EJ3 part2 - Plots para comparacion digits, more_digits y merged_digits."""
 import os
 import pickle
 import sys
@@ -46,26 +46,26 @@ def main():
 
     plot_multi_learning_curves(
         val_acc_curves,
-        title="EJ3 — Val accuracy: digits vs more_digits (mismo test, 3 seeds)",
+        title="EJ3 - Val accuracy: digits vs more_digits (mismo test, 3 seeds)",
         path=os.path.join(OUT_DIR, "val_acc_curves.png"),
         ylabel="Val accuracy",
     )
     plot_multi_bar(test_acc_data,
-                   title="EJ3 — Test accuracy: digits vs more_digits (mismo test)",
+                   title="EJ3 - Test accuracy: digits vs more_digits (mismo test)",
                    path=os.path.join(OUT_DIR, "test_acc_bar.png"),
                    ylabel="Test accuracy")
 
     for ds in datasets:
         plot_confusion_matrix(cms[ds], labels=[str(i) for i in range(10)],
-                              title=f"EJ3 — Confusion Matrix test ({ds}, promedio)",
-                              path=os.path.join(OUT_DIR, f"cm_{ds}.png"))
+                      title=f"EJ3 - Confusion Matrix test ({ds}, promedio)",
+                      path=os.path.join(OUT_DIR, f"cm_{ds}.png"))
 
     # Per-class F1 comparison
     n_classes = per_class_f1s[datasets[0]].shape[1]
     fig, ax = plt.subplots(figsize=(11, 5))
     x = np.arange(n_classes)
     w = 0.4
-    colors = ["steelblue", "tomato"]
+    colors = ["steelblue", "tomato", "seagreen"]
     for i, ds in enumerate(datasets):
         means = per_class_f1s[ds].mean(axis=0)
         stds = per_class_f1s[ds].std(axis=0)
@@ -73,22 +73,22 @@ def main():
                color=colors[i % len(colors)], capsize=3, alpha=0.85)
     ax.set_xticks(x)
     ax.set_xticklabels([str(i) for i in range(n_classes)])
-    ax.set_xlabel("Dígito")
+    ax.set_xlabel("Digito")
     ax.set_ylabel("F1 (test)")
-    ax.set_title("EJ3 — F1 por clase (test): digits vs more_digits")
+    ax.set_title("EJ3 - F1 por clase (test): comparacion de datasets")
     ax.legend()
     ax.grid(axis="y", alpha=0.3)
     save_fig(fig, os.path.join(OUT_DIR, "per_class_f1.png"))
 
-    summary = "EJ3 — Comparación digits.csv vs more_digits.csv (mismo test):\n\n"
+    summary = "EJ3 - Comparacion digits.csv, more_digits.csv y merged_digits.csv (mismo test):\n\n"
     for ds in datasets:
         summary += f"{ds}:\n"
-        summary += f"  test_acc = {test_acc_data[ds][0]:.4f} ± {test_acc_data[ds][1]:.4f}\n"
-        summary += f"  val_acc  = {val_acc_data[ds][0]:.4f} ± {val_acc_data[ds][1]:.4f}\n"
+        summary += f"  test_acc = {test_acc_data[ds][0]:.4f} +/- {test_acc_data[ds][1]:.4f}\n"
+        summary += f"  val_acc  = {val_acc_data[ds][0]:.4f} +/- {val_acc_data[ds][1]:.4f}\n"
         f1_mean = per_class_f1s[ds].mean(axis=0)
         f1_std = per_class_f1s[ds].std(axis=0)
         for c in range(n_classes):
-            summary += f"  F1 dígito {c}: {f1_mean[c]:.4f}±{f1_std[c]:.4f}\n"
+            summary += f"  F1 digito {c}: {f1_mean[c]:.4f}+/-{f1_std[c]:.4f}\n"
         summary += "\n"
     with open(os.path.join(OUT_DIR, "summary.txt"), "w") as f:
         f.write(summary)

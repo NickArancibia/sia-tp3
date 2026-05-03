@@ -1,11 +1,12 @@
-"""EJ3 part2 — Comparación digits.csv vs more_digits.csv.
+"""EJ3 part2 - Comparacion digits.csv, more_digits.csv y merged_digits.csv.
 
-Entrena la MISMA arquitectura con dos datasets distintos:
-- digits.csv (12449 samples, 9 clases — falta el 8)
+Entrena la MISMA arquitectura con tres datasets distintos:
+- digits.csv (12449 samples, 9 clases - falta el 8)
 - more_digits.csv (15741 samples, 10 clases)
+- merged_digits.csv (union de ambos sin duplicados exactos)
 
-Evalúa ambos sobre el MISMO test (digits_test.csv, 10 clases).
-Esto aísla el efecto de "más datos + clase 8 incluida" vs el modelo en sí.
+Evalua todos sobre el MISMO test (digits_test.csv, 10 clases).
+Esto aisla el efecto de "mas datos + clase 8 incluida" vs el modelo en si.
 """
 import os
 import pickle
@@ -20,12 +21,13 @@ from common import (RESULTS_PART2, TEST_CSV, build_mlp, evaluate_on_test,
                     prepare_data, train_model)
 from shared.optimizers import Adam
 
-# Dos datasets de entrenamiento; mismo test.
+# Tres datasets de entrenamiento; mismo test.
 EJ2_DATA_DIR = os.path.join(REPO_DIR, "ej2", "data")
 EJ3_DATA_DIR = os.path.join(EJ3_DIR, "data")
 DATASETS = [
     {"name": "digits", "path": os.path.join(EJ2_DATA_DIR, "digits.csv")},
     {"name": "more_digits", "path": os.path.join(EJ3_DATA_DIR, "more_digits.csv")},
+    {"name": "merged_digits", "path": os.path.join(EJ3_DATA_DIR, "merged_digits.csv")},
 ]
 SEEDS = [0, 1, 2]
 ARCH = [784, 128, 64, 10]
