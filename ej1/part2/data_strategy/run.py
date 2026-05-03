@@ -1,24 +1,44 @@
-import copy
-import csv
 import os
 import sys
 
+import numpy as np
+import pandas as pd
+
 EJ1_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 REPO_DIR = os.path.dirname(EJ1_DIR)
+PART2_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, EJ1_DIR)
 sys.path.insert(0, REPO_DIR)
+sys.path.insert(0, PART2_DIR)
 
-import pandas as pd
-import numpy as np
-
+from common import (
+    RAW_FIELDNAMES,
+    aggregate_seed_summary,
+    append_rows_csv,
+    base_row,
+    batch_label,
+    build_splits,
+    build_train_val_test_indices,
+    copy_cfg,
+    curve_rows,
+    evaluate_binary_scores,
+    fit_model_fixed_epochs,
+    fit_model_with_validation,
+    load_raw_df,
+    prepare_raw_file,
+    sample_output_rows,
+    split_summary_row,
+    select_threshold_by_f2,
+)
 from main_part2 import _make_perceptron, load_data
 from shared.config_loader import load_config
-from shared.losses import mse
-from shared.metrics import auc, pr_curve, precision_recall_f1, threshold_sweep
-from shared.optimizers import build_optimizer
-from shared.preprocessing import build_scaler, stratified_kfold_indices, stratified_split
-from shared.regularization import EarlyStopping
+from shared.preprocessing import build_scaler
 
+EXPERIMENT_TYPE = "data_strategy"
+OUT_DIR = os.path.join(EJ1_DIR, "results", "part2", "data_strategy")
+RAW_PATH = os.path.join(OUT_DIR, "strategy_raw.csv")
+SUMMARY_PATH = os.path.join(OUT_DIR, "strategy_summary.csv")
+CHECKPOINT_DIR = os.path.join(OUT_DIR, "checkpoints")
 
 STRATEGY_LABELS = {
     "S1": "S1 Holdout",
@@ -26,290 +46,109 @@ STRATEGY_LABELS = {
     "S3": "S3 5-Fold CV",
 }
 
-RAW_FIELDNAMES = [
-    "record_type", "strategy", "scaler", "optimizer", "learning_rate", "batch_size", "batch_label",
-    "seed", "split_kind", "split_id", "epoch", "train_size", "val_size", "threshold_selected",
-    "train_mse", "val_mse", "train_auc_pr", "val_auc_pr", "train_precision", "train_recall",
-    "train_f1", "val_precision", "val_recall", "val_f1", "generalization_gap_auc_pr",
-    "generalization_gap_f1", "generalization_gap_mse", "stopped_at",
-]
-
 SUMMARY_FIELDNAMES = [
     "strategy", "strategy_label", "scaler", "optimizer", "learning_rate", "batch_size", "batch_label",
-    "mean_val_auc_pr", "std_val_auc_pr", "mean_val_precision", "std_val_precision", "mean_val_recall",
-    "std_val_recall", "mean_val_f1", "std_val_f1", "mean_train_mse", "std_train_mse", "mean_val_mse",
-    "std_val_mse", "gap_mse", "mean_threshold", "std_threshold", "mean_stopped_at",
+    "mean_val_auc_pr", "std_val_auc_pr", "mean_val_accuracy", "std_val_accuracy",
+    "mean_val_precision", "std_val_precision", "mean_val_recall", "std_val_recall",
+    "mean_val_f1", "std_val_f1", "mean_val_f2", "std_val_f2", "mean_val_cost", "std_val_cost",
+    "mean_train_mse", "std_train_mse", "mean_val_mse", "std_val_mse", "gap_mse",
+    "mean_threshold", "std_threshold", "mean_stopped_at",
+    "mean_test_auc_pr", "std_test_auc_pr", "mean_test_accuracy", "std_test_accuracy",
+    "mean_test_precision", "std_test_precision", "mean_test_recall", "std_test_recall",
+    "mean_test_f1", "std_test_f1", "mean_test_f2", "std_test_f2",
+    "mean_test_cost", "std_test_cost", "mean_test_mse", "std_test_mse",
+    "mean_elapsed_s", "std_elapsed_s",
 ]
 
 
-def copy_cfg(cfg, scaler_name=None, training_overrides=None):
-    new_cfg = copy.deepcopy(cfg)
-    if scaler_name is not None:
-        new_cfg["data"]["preprocess"]["feature_scaler"] = scaler_name
-    if training_overrides:
-        new_cfg["training"].update(training_overrides)
-    return new_cfg
+def split_done(raw_df, strategy, seed, split_spec):
+    mask = (
+        (raw_df["record_type"] == "split_summary")
+        & (raw_df["experiment_type"] == EXPERIMENT_TYPE)
+        & (raw_df["strategy"] == strategy)
+        & (raw_df["seed"].astype(str) == str(seed))
+        & (raw_df["split_kind"] == split_spec["split_kind"])
+        & (raw_df["split_id"].astype(str) == str(split_spec["split_id"]))
+        & (raw_df["subset"] == "val")
+    )
+    return bool(mask.any())
 
 
-def effective_batch_size(batch_size):
-    return 0 if int(batch_size) == -1 else int(batch_size)
+def final_retrain_done(raw_df, strategy, seed):
+    mask = (
+        (raw_df["record_type"] == "split_summary")
+        & (raw_df["experiment_type"] == EXPERIMENT_TYPE)
+        & (raw_df["strategy"] == strategy)
+        & (raw_df["seed"].astype(str) == str(seed))
+        & (raw_df["split_kind"] == "final_retrain")
+        & (raw_df["subset"] == "test")
+    )
+    return bool(mask.any())
 
 
-def batch_label(batch_size):
-    batch_size = int(batch_size)
-    if batch_size == -1:
-        return "full"
-    if batch_size == 1:
-        return "online"
-    return str(batch_size)
-
-
-def append_rows_csv(path, rows, fieldnames):
-    if not rows:
-        return
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    exists = os.path.exists(path)
-    with open(path, "a", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        if not exists:
-            writer.writeheader()
-        writer.writerows(rows)
-
-
-def build_splits(strategy, train_val_idx, y, split_cfg):
-    base_seed = split_cfg.get("seed", 42)
-    val_frac = split_cfg.get("inner_val_frac", split_cfg.get("val_frac", 0.15))
-
-    if strategy == "S1":
-        train_rel, val_rel, _ = stratified_split(y[train_val_idx], val_frac, test_frac=0.0, seed=base_seed)
-        return [{
-            "split_kind": "holdout",
-            "split_id": 0,
-            "train_idx": train_val_idx[train_rel],
-            "val_idx": train_val_idx[val_rel],
-        }]
-
-    if strategy == "S2":
-        repeats = split_cfg.get("repeated_holdout_repeats", 5)
-        splits = []
-        for repeat in range(repeats):
-            train_rel, val_rel, _ = stratified_split(
-                y[train_val_idx], val_frac, test_frac=0.0, seed=base_seed + repeat
-            )
-            splits.append({
-                "split_kind": "repeated_holdout",
-                "split_id": repeat,
-                "train_idx": train_val_idx[train_rel],
-                "val_idx": train_val_idx[val_rel],
-            })
-        return splits
-
-    if strategy == "S3":
-        cv_folds = split_cfg.get("cv_folds", 5)
-        folds = stratified_kfold_indices(y[train_val_idx], cv_folds, base_seed)
-        splits = []
-        for fold_id, val_rel in enumerate(folds):
-            train_rel = np.concatenate([fold for idx, fold in enumerate(folds) if idx != fold_id])
-            splits.append({
-                "split_kind": "cv_fold",
-                "split_id": fold_id,
-                "train_idx": train_val_idx[train_rel],
-                "val_idx": train_val_idx[val_rel],
-            })
-        return splits
-
-    raise ValueError(f"Unknown strategy: {strategy}")
-
-
-def fit_split_model(cfg, X_train, t_train, X_val, t_val, seed):
-    epochs = cfg["training"]["epochs"]
-    batch_size = effective_batch_size(cfg["training"].get("batch_size", 32))
-    shuffle = cfg["training"].get("shuffle", True)
-    es_cfg = cfg["training"].get("early_stopping", {})
-
-    model = _make_perceptron(cfg, X_train.shape[1], seed)
-    optimizer = build_optimizer(cfg["training"])
-    rng = __import__("numpy").random.default_rng(seed)
-
-    early_stopping = None
-    if es_cfg.get("enabled", False):
-        early_stopping = EarlyStopping(patience=es_cfg.get("patience", 30))
-
-    train_losses = []
-    val_losses = []
-    stopped_at = epochs
-    for epoch in range(1, epochs + 1):
-        train_loss, _ = model.train_epoch(
-            X_train, t_train, optimizer, batch_size=batch_size, shuffle=shuffle, rng=rng
+def summarize_strategy(raw_df, strategy, run_cfg):
+    seed_rows = raw_df[
+        (raw_df["record_type"] == "split_summary")
+        & (raw_df["experiment_type"] == EXPERIMENT_TYPE)
+        & (raw_df["strategy"] == strategy)
+        & (raw_df["split_kind"] == "final_retrain")
+        & (raw_df["subset"] == "test")
+    ]
+    seed_summaries = []
+    for seed in sorted(seed_rows["seed"].astype(int).unique()):
+        seed_summary = aggregate_seed_summary(
+            raw_df,
+            {"experiment_type": EXPERIMENT_TYPE, "strategy": strategy, "seed": seed},
         )
-        val_scores = model.predict(X_val)
-        val_loss = mse(t_val, val_scores)
-        train_losses.append(train_loss)
-        val_losses.append(val_loss)
-        if early_stopping is not None and early_stopping(val_loss, model.get_params()):
-            stopped_at = epoch
-            break
+        if seed_summary is not None:
+            seed_summaries.append(seed_summary)
 
-    if early_stopping is not None and early_stopping.best_params is not None:
-        model.set_params(early_stopping.best_params)
+    if not seed_summaries:
+        return None
 
-    return model, train_losses, val_losses, stopped_at
-
-
-def evaluate_split(cfg, X, t, y, split_spec, seed):
-    train_idx = split_spec["train_idx"]
-    val_idx = split_spec["val_idx"]
-    X_train = X[train_idx]
-    X_val = X[val_idx]
-    t_train = t[train_idx]
-    t_val = t[val_idx]
-    y_train = y[train_idx]
-    y_val = y[val_idx]
-
-    scaler = build_scaler(cfg["data"]["preprocess"]["feature_scaler"])
-    if scaler:
-        X_train = scaler.fit_transform(X_train)
-        X_val = scaler.transform(X_val)
-
-    model, train_losses, val_losses, stopped_at = fit_split_model(cfg, X_train, t_train, X_val, t_val, seed)
-    train_scores = model.predict(X_train)
-    val_scores = model.predict(X_val)
-    _, _, _, _, best_t = threshold_sweep(y_val, val_scores)
-    train_pred = (train_scores >= best_t).astype(int)
-    val_pred = (val_scores >= best_t).astype(int)
-    train_precision, train_recall, train_f1 = precision_recall_f1(y_train, train_pred)
-    val_precision, val_recall, val_f1 = precision_recall_f1(y_val, val_pred)
-    train_precs, train_recs = pr_curve(y_train, train_scores)
-    val_precs, val_recs = pr_curve(y_val, val_scores)
-
-    return {
-        "split_kind": split_spec["split_kind"],
-        "split_id": split_spec["split_id"],
-        "train_idx": train_idx,
-        "val_idx": val_idx,
-        "train_losses": train_losses,
-        "val_losses": val_losses,
-        "train_auc_pr": auc(train_recs, train_precs),
-        "val_auc_pr": auc(val_recs, val_precs),
-        "train_precision": train_precision,
-        "train_recall": train_recall,
-        "train_f1": train_f1,
-        "val_precision": val_precision,
-        "val_recall": val_recall,
-        "val_f1": val_f1,
-        "threshold": float(best_t),
-        "train_mse": float(mse(t_train, train_scores)),
-        "val_mse": float(mse(t_val, val_scores)),
-        "stopped_at": stopped_at,
-    }
-
-
-def raw_rows_for_run(cfg, strategy, seed, run):
-    base = {
-        "strategy": strategy,
-        "scaler": cfg["data"]["preprocess"]["feature_scaler"],
-        "optimizer": cfg["training"]["optimizer"],
-        "learning_rate": cfg["training"]["learning_rate"],
-        "batch_size": cfg["training"]["batch_size"],
-        "batch_label": batch_label(cfg["training"]["batch_size"]),
-        "seed": seed,
-        "split_kind": run["split_kind"],
-        "split_id": run["split_id"],
-        "train_size": len(run["train_idx"]),
-        "val_size": len(run["val_idx"]),
-        "threshold_selected": run["threshold"],
-        "train_mse": run["train_mse"],
-        "val_mse": run["val_mse"],
-        "train_auc_pr": run["train_auc_pr"],
-        "val_auc_pr": run["val_auc_pr"],
-        "train_precision": run["train_precision"],
-        "train_recall": run["train_recall"],
-        "train_f1": run["train_f1"],
-        "val_precision": run["val_precision"],
-        "val_recall": run["val_recall"],
-        "val_f1": run["val_f1"],
-        "generalization_gap_auc_pr": run["train_auc_pr"] - run["val_auc_pr"],
-        "generalization_gap_f1": run["train_f1"] - run["val_f1"],
-        "generalization_gap_mse": run["val_mse"] - run["train_mse"],
-        "stopped_at": run["stopped_at"],
-    }
-    rows = [{"record_type": "run_metric", "epoch": "", **base}]
-    for epoch_idx, (train_loss, val_loss) in enumerate(zip(run["train_losses"], run["val_losses"]), start=1):
-        rows.append({
-            "record_type": "curve_point",
-            "strategy": strategy,
-            "scaler": cfg["data"]["preprocess"]["feature_scaler"],
-            "optimizer": cfg["training"]["optimizer"],
-            "learning_rate": cfg["training"]["learning_rate"],
-            "batch_size": cfg["training"]["batch_size"],
-            "batch_label": batch_label(cfg["training"]["batch_size"]),
-            "seed": seed,
-            "split_kind": run["split_kind"],
-            "split_id": run["split_id"],
-            "epoch": epoch_idx,
-            "train_size": len(run["train_idx"]),
-            "val_size": len(run["val_idx"]),
-            "threshold_selected": "",
-            "train_mse": train_loss,
-            "val_mse": val_loss,
-            "train_auc_pr": "",
-            "val_auc_pr": "",
-            "train_precision": "",
-            "train_recall": "",
-            "train_f1": "",
-            "val_precision": "",
-            "val_recall": "",
-            "val_f1": "",
-            "generalization_gap_auc_pr": "",
-            "generalization_gap_f1": "",
-            "generalization_gap_mse": "",
-            "stopped_at": run["stopped_at"],
-        })
-    return rows
-
-
-def summarize_strategy(raw_df, strategy):
-    runs = raw_df[(raw_df["record_type"] == "run_metric") & (raw_df["strategy"] == strategy)].copy()
-    return {
+    summary = {
         "strategy": strategy,
         "strategy_label": STRATEGY_LABELS[strategy],
-        "scaler": runs["scaler"].iloc[0],
-        "optimizer": runs["optimizer"].iloc[0],
-        "learning_rate": float(runs["learning_rate"].iloc[0]),
-        "batch_size": int(runs["batch_size"].iloc[0]),
-        "batch_label": runs["batch_label"].iloc[0],
-        "mean_val_auc_pr": float(runs["val_auc_pr"].astype(float).mean()),
-        "std_val_auc_pr": float(runs["val_auc_pr"].astype(float).std(ddof=0)),
-        "mean_val_precision": float(runs["val_precision"].astype(float).mean()),
-        "std_val_precision": float(runs["val_precision"].astype(float).std(ddof=0)),
-        "mean_val_recall": float(runs["val_recall"].astype(float).mean()),
-        "std_val_recall": float(runs["val_recall"].astype(float).std(ddof=0)),
-        "mean_val_f1": float(runs["val_f1"].astype(float).mean()),
-        "std_val_f1": float(runs["val_f1"].astype(float).std(ddof=0)),
-        "mean_train_mse": float(runs["train_mse"].astype(float).mean()),
-        "std_train_mse": float(runs["train_mse"].astype(float).std(ddof=0)),
-        "mean_val_mse": float(runs["val_mse"].astype(float).mean()),
-        "std_val_mse": float(runs["val_mse"].astype(float).std(ddof=0)),
-        "gap_mse": float(runs["generalization_gap_mse"].astype(float).mean()),
-        "mean_threshold": float(runs["threshold_selected"].astype(float).mean()),
-        "std_threshold": float(runs["threshold_selected"].astype(float).std(ddof=0)),
-        "mean_stopped_at": float(runs["stopped_at"].astype(float).mean()),
+        "scaler": run_cfg["data"]["preprocess"]["feature_scaler"],
+        "optimizer": run_cfg["training"]["optimizer"],
+        "learning_rate": float(run_cfg["training"]["learning_rate"]),
+        "batch_size": int(run_cfg["training"]["batch_size"]),
+        "batch_label": batch_label(run_cfg["training"]["batch_size"]),
     }
+    for metric in [
+        "val_auc_pr", "val_accuracy", "val_precision", "val_recall", "val_f1", "val_f2", "val_cost",
+        "train_mse", "val_mse", "test_auc_pr", "test_accuracy", "test_precision", "test_recall",
+        "test_f1", "test_f2", "test_cost", "test_mse", "elapsed_s",
+    ]:
+        if metric == "elapsed_s":
+            values = np.asarray([row["elapsed_s_total"] for row in seed_summaries], dtype=float)
+            prefix = "elapsed_s"
+        else:
+            key = f"mean_{metric}" if metric.startswith(("val_", "train_")) else metric
+            values = np.asarray([row[key] for row in seed_summaries], dtype=float)
+            prefix = metric
+        summary[f"mean_{prefix}"] = float(values.mean())
+        summary[f"std_{prefix}"] = float(values.std(ddof=0))
+
+    summary["gap_mse"] = float(np.mean([row["gap_mse"] for row in seed_summaries]))
+    summary["mean_threshold"] = float(np.mean([row["mean_threshold"] for row in seed_summaries]))
+    summary["std_threshold"] = float(np.std([row["mean_threshold"] for row in seed_summaries], ddof=0))
+    summary["mean_stopped_at"] = float(np.mean([row["mean_stopped_at"] for row in seed_summaries]))
+    return summary
 
 
 def main():
     cfg = load_config(os.path.join(EJ1_DIR, "config.yaml"))
-    out_dir = os.path.join(EJ1_DIR, "results", "part2", "data_strategy")
-    os.makedirs(out_dir, exist_ok=True)
-    raw_path = os.path.join(out_dir, "strategy_raw.csv")
-    summary_path = os.path.join(out_dir, "strategy_summary.csv")
-    for path in (raw_path, summary_path):
-        if os.path.exists(path):
-            os.remove(path)
+    os.makedirs(OUT_DIR, exist_ok=True)
+    os.makedirs(CHECKPOINT_DIR, exist_ok=True)
 
+    raw_df = prepare_raw_file(RAW_PATH)
     X, t, y, _ = load_data(cfg)
+    split_cfg = cfg["data"]["split"]
+    train_val_idx, test_idx = build_train_val_test_indices(y, split_cfg)
     search_cfg = cfg["generalization_search"]
     baseline = search_cfg["strategy_baseline"]
+    seeds = [int(seed) for seed in cfg["experiment"].get("seeds", [cfg["experiment"].get("seed", 42)])]
     run_cfg = copy_cfg(
         cfg,
         scaler_name=search_cfg["selected_scaler"],
@@ -320,30 +159,169 @@ def main():
         },
     )
 
-    split_seed = cfg["data"]["split"].get("seed", 42)
-    test_frac = cfg["data"]["split"].get("test_frac", 0.15)
-    train_val_idx, _, _ = stratified_split(y, val_frac=0.0, test_frac=test_frac, seed=split_seed)
-    seed = cfg["experiment"].get("seed", 42)
-
     print("\n" + "=" * 60)
     print("PART 2 — DATA STRATEGY")
     print("=" * 60)
 
+    summaries = []
     for strategy in ("S1", "S2", "S3"):
-        for split_spec in build_splits(strategy, train_val_idx, y, run_cfg["data"]["split"]):
-            run = evaluate_split(run_cfg, X, t, y, split_spec, seed)
-            append_rows_csv(raw_path, raw_rows_for_run(run_cfg, strategy, seed, run), RAW_FIELDNAMES)
+        split_specs = build_splits(strategy, train_val_idx, y, split_cfg)
 
-        raw_df = pd.read_csv(raw_path)
-        summary = summarize_strategy(raw_df, strategy)
-        print(
-            f"  {summary['strategy_label']}: AUC-PR val={summary['mean_val_auc_pr']:.4f} "
-            f"± {summary['std_val_auc_pr']:.4f} | MSE val={summary['mean_val_mse']:.6f}"
-        )
+        for seed in seeds:
+            if final_retrain_done(raw_df, strategy, seed):
+                print(f"  {strategy} seed={seed}: ya completo, salteo.")
+                continue
 
-    raw_df = pd.read_csv(raw_path)
-    summaries = [summarize_strategy(raw_df, strategy) for strategy in ("S1", "S2", "S3")]
-    pd.DataFrame(summaries, columns=SUMMARY_FIELDNAMES).to_csv(summary_path, index=False)
+            for split_spec in split_specs:
+                if split_done(raw_df, strategy, seed, split_spec):
+                    continue
+
+                train_idx = split_spec["train_idx"]
+                val_idx = split_spec["val_idx"]
+                X_train = X[train_idx]
+                X_val = X[val_idx]
+                t_train = t[train_idx]
+                t_val = t[val_idx]
+                y_train = y[train_idx]
+                y_val = y[val_idx]
+
+                scaler = build_scaler(run_cfg["data"]["preprocess"]["feature_scaler"])
+                if scaler is not None:
+                    X_train = scaler.fit_transform(X_train)
+                    X_val = scaler.transform(X_val)
+
+                split_key = f"{strategy}_seed{seed}_{split_spec['split_kind']}_{split_spec['split_id']}"
+                model, train_losses, val_losses, stopped_at, elapsed_s, elapsed_curve = fit_model_with_validation(
+                    run_cfg, _make_perceptron, X_train, t_train, X_val, t_val, seed,
+                    CHECKPOINT_DIR, split_key,
+                )
+                train_scores = model.predict(X_train)
+                val_scores = model.predict(X_val)
+                threshold = select_threshold_by_f2(y_val, val_scores, beta=2.0)
+                train_metrics = evaluate_binary_scores(y_train, train_scores, threshold, targets=t_train, beta=2.0)
+                val_metrics = evaluate_binary_scores(y_val, val_scores, threshold, targets=t_val, beta=2.0)
+
+                curve_base = base_row(
+                    run_cfg, EXPERIMENT_TYPE, seed, len(train_idx), len(val_idx), len(test_idx),
+                    strategy=strategy, split_kind=split_spec["split_kind"], split_id=split_spec["split_id"],
+                )
+                train_base = base_row(
+                    run_cfg, EXPERIMENT_TYPE, seed, len(train_idx), len(val_idx), len(test_idx),
+                    strategy=strategy, split_kind=split_spec["split_kind"], split_id=split_spec["split_id"], subset="train",
+                )
+                val_base = base_row(
+                    run_cfg, EXPERIMENT_TYPE, seed, len(train_idx), len(val_idx), len(test_idx),
+                    strategy=strategy, split_kind=split_spec["split_kind"], split_id=split_spec["split_id"], subset="val",
+                )
+
+                rows = curve_rows(curve_base, train_losses, val_losses, elapsed_curve, stopped_at=stopped_at)
+                rows.append(split_summary_row(train_base, train_metrics, threshold, "f2_on_val", stopped_at))
+                rows.append(split_summary_row(val_base, val_metrics, threshold, "f2_on_val", stopped_at, elapsed_s=elapsed_s))
+                if search_cfg["raw_outputs"].get("include_val_samples", True):
+                    rows.extend(
+                        sample_output_rows(
+                            val_base,
+                            y_val,
+                            t_val,
+                            val_scores,
+                            model.pre_activation(X_val),
+                            val_metrics["pred"],
+                            threshold,
+                            "f2_on_val",
+                        )
+                    )
+                append_rows_csv(RAW_PATH, rows, RAW_FIELDNAMES)
+                raw_df = load_raw_df(RAW_PATH)
+
+            if final_retrain_done(raw_df, strategy, seed):
+                continue
+
+            val_rows = raw_df[
+                (raw_df["record_type"] == "split_summary")
+                & (raw_df["experiment_type"] == EXPERIMENT_TYPE)
+                & (raw_df["strategy"] == strategy)
+                & (raw_df["seed"].astype(str) == str(seed))
+                & (raw_df["subset"] == "val")
+            ].copy()
+            if val_rows.empty:
+                continue
+
+            threshold = float(val_rows["threshold_selected"].astype(float).mean())
+            final_epochs = max(1, int(round(val_rows["stopped_at"].astype(float).mean())))
+
+            X_train = X[train_val_idx]
+            X_test = X[test_idx]
+            t_train = t[train_val_idx]
+            t_test = t[test_idx]
+            y_train = y[train_val_idx]
+            y_test = y[test_idx]
+            scaler = build_scaler(run_cfg["data"]["preprocess"]["feature_scaler"])
+            if scaler is not None:
+                X_train = scaler.fit_transform(X_train)
+                X_test = scaler.transform(X_test)
+
+            final_key = f"{strategy}_seed{seed}_final_retrain"
+            model, train_losses, elapsed_s, elapsed_curve = fit_model_fixed_epochs(
+                run_cfg, _make_perceptron, X_train, t_train, seed, final_epochs,
+                CHECKPOINT_DIR, final_key,
+            )
+            train_scores = model.predict(X_train)
+            test_scores = model.predict(X_test)
+            train_metrics = evaluate_binary_scores(y_train, train_scores, threshold, targets=t_train, beta=2.0)
+            test_metrics = evaluate_binary_scores(y_test, test_scores, threshold, targets=t_test, beta=2.0)
+
+            curve_base = base_row(
+                run_cfg, EXPERIMENT_TYPE, seed, len(train_val_idx), 0, len(test_idx),
+                strategy=strategy, split_kind="final_retrain", split_id=0,
+            )
+            train_base = base_row(
+                run_cfg, EXPERIMENT_TYPE, seed, len(train_val_idx), 0, len(test_idx),
+                strategy=strategy, split_kind="final_retrain", split_id=0, subset="train",
+            )
+            test_base = base_row(
+                run_cfg, EXPERIMENT_TYPE, seed, len(train_val_idx), 0, len(test_idx),
+                strategy=strategy, split_kind="final_retrain", split_id=0, subset="test",
+            )
+
+            rows = curve_rows(curve_base, train_losses, val_losses=None, elapsed_s_cumulative=elapsed_curve, stopped_at=final_epochs)
+            rows.append(split_summary_row(train_base, train_metrics, threshold, "mean_val_f2_threshold", final_epochs))
+            rows.append(split_summary_row(test_base, test_metrics, threshold, "mean_val_f2_threshold", final_epochs, elapsed_s=elapsed_s))
+            if search_cfg["raw_outputs"].get("include_test_samples", True):
+                rows.extend(
+                    sample_output_rows(
+                        test_base,
+                        y_test,
+                        t_test,
+                        test_scores,
+                        model.pre_activation(X_test),
+                        test_metrics["pred"],
+                        threshold,
+                        "mean_val_f2_threshold",
+                    )
+                )
+            append_rows_csv(RAW_PATH, rows, RAW_FIELDNAMES)
+            raw_df = load_raw_df(RAW_PATH)
+
+            seed_summary = aggregate_seed_summary(
+                raw_df,
+                {"experiment_type": EXPERIMENT_TYPE, "strategy": strategy, "seed": seed},
+            )
+            if seed_summary is not None:
+                print(
+                    f"  {strategy} seed={seed}: val_f2={seed_summary['mean_val_f2']:.4f} "
+                    f"test_f2={seed_summary['test_f2']:.4f} elapsed={seed_summary['elapsed_s_total']:.1f}s"
+                )
+
+        raw_df = load_raw_df(RAW_PATH)
+        summary = summarize_strategy(raw_df, strategy, run_cfg)
+        summaries = [row for row in summaries if row["strategy"] != strategy]
+        if summary is not None:
+            summaries.append(summary)
+            print(
+                f"  {STRATEGY_LABELS[strategy]}: val_f2={summary['mean_val_f2']:.4f} ± {summary['std_val_f2']:.4f} "
+                f"test_f2={summary['mean_test_f2']:.4f} ± {summary['std_test_f2']:.4f}"
+            )
+            pd.DataFrame(summaries, columns=SUMMARY_FIELDNAMES).to_csv(SUMMARY_PATH, index=False)
 
 
 if __name__ == "__main__":

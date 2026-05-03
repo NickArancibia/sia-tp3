@@ -34,8 +34,10 @@ def main():
     raw_df = pd.read_csv(os.path.join(out_dir, "batch_lr_raw.csv"))
     summary_df = pd.read_csv(os.path.join(out_dir, "batch_lr_summary.csv"))
 
-    batch_order = [1, 4, 16, 32, 128, 512, -1]
-    lr_order = [0.001, 0.0005, 0.0001, 0.00005]
+    batch_order = sorted(summary_df["batch_size"].astype(int).unique(), key=lambda value: (value == -1, value))
+    if -1 in batch_order:
+        batch_order = [value for value in batch_order if value != -1] + [-1]
+    lr_order = sorted(summary_df["learning_rate"].astype(float).unique(), reverse=True)
     row_labels = [batch_label(batch) for batch in batch_order]
     col_labels = [format_lr(lr) for lr in lr_order]
 
@@ -81,6 +83,7 @@ def main():
             & (raw_df["config_name"] == config_name)
             & (raw_df["batch_size"].astype(int) == batch_size)
             & (raw_df["learning_rate"].astype(float).round(12) == round(learning_rate, 12))
+            & (raw_df["split_kind"] != "final_retrain")
         ]
         train_runs = []
         val_runs = []

@@ -43,6 +43,17 @@ def precision_recall_f1(y_true, y_pred):
     return float(precision), float(recall), float(f1)
 
 
+def precision_recall_fbeta(y_true, y_pred, beta=1.0):
+    precision, recall, _ = precision_recall_f1(y_true, y_pred)
+    beta = float(beta)
+    if beta <= 0:
+        raise ValueError(f"beta must be > 0, got {beta}")
+    beta_sq = beta ** 2
+    denom = beta_sq * precision + recall
+    fbeta = ((1.0 + beta_sq) * precision * recall / denom) if denom > 0 else 0.0
+    return float(precision), float(recall), float(fbeta)
+
+
 def per_class_metrics(cm):
     """Compute per-class precision, recall, F1 from confusion matrix.
 

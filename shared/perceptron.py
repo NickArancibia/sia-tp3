@@ -89,3 +89,27 @@ class SimplePerceptron:
             batch_losses.append(mse(t_b, O))
 
         return float(np.mean(batch_losses)), batch_losses
+
+    def save(self, path):
+        np.savez(
+            path,
+            W=self.W,
+            b=np.asarray([self.b], dtype=np.float64),
+            activation=self.activation,
+            beta=float(self.beta),
+            weight_decay=float(self.weight_decay),
+        )
+
+    @classmethod
+    def load(cls, path):
+        data = np.load(path, allow_pickle=True)
+        W = np.asarray(data["W"], dtype=np.float64)
+        model = cls(
+            n_inputs=W.shape[0],
+            activation=str(data["activation"]),
+            beta=float(data["beta"]),
+            weight_decay=float(data["weight_decay"]),
+        )
+        model.W = W.copy()
+        model.b = float(np.asarray(data["b"], dtype=np.float64).reshape(-1)[0])
+        return model

@@ -6,9 +6,9 @@ model:
   init_scale: 0.1
 
 training:
-  optimizer: "adam"        # "gd" | "sgd" | "momentum" | "adam"
-  learning_rate: 0.0005
-  batch_size: 30         # 0 = full-batch, 1 = online
+  optimizer: "gd"        # "gd" | "sgd" | "momentum" | "adam"
+  learning_rate: 0.001
+  batch_size: 32         # 0 = full-batch, 1 = online
   shuffle: true
   epochs: 500
   momentum: 0.9            # only used when optimizer == "momentum"
@@ -16,8 +16,9 @@ training:
   adam_eps: 1.0e-8
   weight_decay: 0.0        # L2 regularization lambda
   early_stopping:
-    enabled: false
-    patience: 30
+    enabled: true
+    patience: 50
+    monitor: "val_loss"
 
 data:
   dataset_path: "data/fraud_dataset.csv"
@@ -42,16 +43,23 @@ experiment:
 
 generalization_search:
   selected_strategy: "S3"
-  selected_scaler: "min-max"
+  selected_scaler: "z-score"
   strategy_baseline:
-    optimizer: "adam"
+    optimizer: "gd"
     batch_size: 32
-    learning_rate: 0.0001
-  optimizer_screening_epochs: 100
+    learning_rate: 0.001
+  optimizer_screening_epochs: 500
   optimizer_screening_candidates:
-    - {candidate_name: "gd_full", optimizer: "gd", batch_size: -1, momentum: 0.9, source: "full_best_lr"}
-    - {candidate_name: "sgd_online", optimizer: "sgd", batch_size: 1, momentum: 0.9, source: "online_best_lr"}
-    - {candidate_name: "adam_best", optimizer: "adam", batch_size: null, momentum: 0.9, source: "global_best_combo"}
-    - {candidate_name: "momentum_best", optimizer: "momentum", batch_size: null, momentum: 0.9, source: "global_best_combo"}
-  heatmap_learning_rates: [0.001, 0.0005, 0.0001, 0.00005]
-  heatmap_batch_sizes: [1, 4, 16, 32, 128, 512, -1]
+    - {candidate_name: "gd", optimizer: "gd", batch_size: 32, momentum: 0.9}
+    - {candidate_name: "adam", optimizer: "adam", batch_size: 32, momentum: 0.9}
+    - {candidate_name: "momentum", optimizer: "momentum", batch_size: 32, momentum: 0.9}
+  heatmap_learning_rates: [0.1, 0.01, 0.001, 0.0001]
+  heatmap_batch_sizes: [1, 16, 32, 64, 128, -1]
+  optimizer_learning_rates: [0.1, 0.01, 0.001, 0.0001]
+  optimizer_batch_size: 32
+  raw_outputs:
+    include_val_samples: true
+    include_test_samples: true
+  checkpointing:
+    enabled: true
+    interval_epochs: 50

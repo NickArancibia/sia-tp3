@@ -47,7 +47,11 @@ def main():
 
     strategy_curves = {}
     for _, summary in summary_df.iterrows():
-        rows = raw_df[(raw_df["record_type"] == "curve_point") & (raw_df["strategy"] == summary["strategy"])]
+        rows = raw_df[
+            (raw_df["record_type"] == "curve_point")
+            & (raw_df["strategy"] == summary["strategy"])
+            & (raw_df["split_kind"] != "final_retrain")
+        ]
         train_runs = []
         val_runs = []
         for split_id in sorted(rows["split_id"].dropna().unique()):

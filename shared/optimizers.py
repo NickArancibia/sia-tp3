@@ -24,6 +24,12 @@ class GradientDescent:
     def reset(self):
         pass
 
+    def state_dict(self):
+        return {"lr": self.lr}
+
+    def load_state_dict(self, state):
+        self.lr = state.get("lr", self.lr)
+
 
 class Momentum:
     def __init__(self, lr, momentum=0.9):
@@ -44,6 +50,19 @@ class Momentum:
 
     def reset(self):
         self._velocity = None
+
+    def state_dict(self):
+        return {
+            "lr": self.lr,
+            "momentum": self.momentum,
+            "velocity": None if self._velocity is None else [v.copy() for v in self._velocity],
+        }
+
+    def load_state_dict(self, state):
+        self.lr = state.get("lr", self.lr)
+        self.momentum = state.get("momentum", self.momentum)
+        velocity = state.get("velocity")
+        self._velocity = None if velocity is None else [np.asarray(v, dtype=float).copy() for v in velocity]
 
 
 class Adam:
@@ -76,6 +95,28 @@ class Adam:
         self._m = None
         self._v = None
         self._t = 0
+
+    def state_dict(self):
+        return {
+            "lr": self.lr,
+            "beta1": self.beta1,
+            "beta2": self.beta2,
+            "eps": self.eps,
+            "m": None if self._m is None else [m.copy() for m in self._m],
+            "v": None if self._v is None else [v.copy() for v in self._v],
+            "t": self._t,
+        }
+
+    def load_state_dict(self, state):
+        self.lr = state.get("lr", self.lr)
+        self.beta1 = state.get("beta1", self.beta1)
+        self.beta2 = state.get("beta2", self.beta2)
+        self.eps = state.get("eps", self.eps)
+        m_state = state.get("m")
+        v_state = state.get("v")
+        self._m = None if m_state is None else [np.asarray(m, dtype=float).copy() for m in m_state]
+        self._v = None if v_state is None else [np.asarray(v, dtype=float).copy() for v in v_state]
+        self._t = int(state.get("t", self._t))
 
 
 def build_optimizer(cfg):
