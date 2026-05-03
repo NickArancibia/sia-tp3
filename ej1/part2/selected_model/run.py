@@ -430,7 +430,7 @@ def main():
 
     run_cfg = copy_cfg(
         cfg,
-        scaler_name=selected["scaler"],
+        scaler_name=cfg["data"]["preprocess"]["feature_scaler"],
         training_overrides={
             "optimizer": selected["optimizer"],
             "learning_rate": float(selected["learning_rate"]),

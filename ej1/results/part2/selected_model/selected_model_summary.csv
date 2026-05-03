@@ -1,0 +1,2 @@
+candidate_name,strategy,scaler,optimizer,learning_rate,batch_size,batch_label,momentum,seed,threshold,epochs,train_auc_pr,test_auc_pr,test_precision,test_recall,test_f1,train_mse,test_mse
+adam_best,S3,z-score,adam,0.0001,16,16,0.9,4,0.75,500,0.9515334107848549,0.9511129785808152,0.6649214659685864,0.9769230769230769,0.7912772585669782,0.005425136546173654,0.005491514256159351
