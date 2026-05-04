@@ -743,3 +743,7 @@ mi-propuesta.md
 notas-personales.md
 
 merged_digits.csv
+
+wj1/results/part2/batch_lr/batch_lr_raw.csv
+j1/results/part2/batch_lr/optimizer_raw.csv
+ej1/results/**/*.csv

@@ -43,7 +43,7 @@
       \texttt{more\_digits.csv} buscando \textbf{accuracy $\geq 98\%$}.
   \end{itemize}
   \vspace{0.5em}
-  Esta presentación se centra en \textbf{EJ2 y EJ3}.
+  Esta presentación resume las decisiones más relevantes de \textbf{EJ1, EJ2 y EJ3}.
 \end{frame}
 
 \begin{frame}{Arquitectura del MLP (Clase 11, Clase 13 - Backprop)}
@@ -65,6 +65,192 @@
   \textbf{Capacidad y generalización (Clase 13 - Regularización)}:
   más capacidad $\Rightarrow$ más riesgo de overfitting; brecha
   train$-$validación crece con la capacidad.
+\end{frame}
+
+% =============================================================
+\section{EJ1 --- Prevención de fraude}
+
+\begin{frame}{EJ1 --- Contexto y setup}
+  \small
+  \textbf{Objetivo}: aproximar la probabilidad de fraude de \emph{BigModel}
+  con un perceptrón simple barato de inferir.
+
+  \vspace{0.3em}
+  \textbf{Criterio de negocio}: minimizar \textbf{falsos negativos}.
+
+  \vspace{0.4em}
+  \begin{table}
+    \centering
+    \scriptsize
+    \begin{tabular}{ll}
+      \toprule
+      Parámetro & Valor \\
+      \midrule
+      Dataset & 7\,500 transacciones, 10 features \\
+      Modelo & perceptrón simple no lineal \\
+      Activación & logistic ($\beta=1.0$) \\
+      Preprocesamiento & z-score + \texttt{hour\_of\_day} + \texttt{day\_of\_week} \\
+      Optimizadores & GD, Momentum ($\alpha=0.9$), Adam \\
+      Learning rates & $10^{-1}, 10^{-2}, 10^{-3}, 10^{-4}$ \\
+      Batch sizes & 1, 16, 32, 64, 128, full batch \\
+      Estrategias & S1 Holdout, S2 Repeated Holdout, S3 5-Fold CV \\
+      Test holdout & 15\% del dataset \\
+      \bottomrule
+    \end{tabular}
+  \end{table}
+\end{frame}
+
+\begin{frame}[plain]
+  \centering
+  \vfill
+  {\Huge Entrenamiento}
+  \vfill
+\end{frame}
+
+\begin{frame}{EJ1 --- Target vs predicción}
+  \begin{center}
+    \includegraphics[width=0.93\linewidth,height=0.72\textheight,keepaspectratio]{../ej1/results/part1/target_vs_prediction_linear_nonlinear.png}
+  \end{center}
+  \scriptsize
+  Se comparan las activaciones \texttt{identity} y \texttt{logistic}.
+\end{frame}
+
+\begin{frame}{EJ1 --- Función interna}
+  \begin{center}
+    \includegraphics[width=0.93\linewidth,height=0.72\textheight,keepaspectratio]{../ej1/results/part1/internal_function_linear_vs_nonlinear.png}
+  \end{center}
+  \scriptsize
+  Se comparan las funciones de activación \texttt{identity} y
+  \texttt{logistic}. El perceptrón no lineal mantiene la salida acotada en
+  $[0,1]$.
+\end{frame}
+
+\begin{frame}{EJ1 --- Error MSE}
+  \begin{center}
+    \includegraphics[width=0.92\linewidth,height=0.76\textheight,keepaspectratio]{../ej1/results/part1/learning_curve_linear_vs_nonlinear.png}
+  \end{center}
+\end{frame}
+
+\begin{frame}[plain]
+  \centering
+  \vfill
+  {\Huge Generalización}
+  \vfill
+\end{frame}
+
+\begin{frame}{EJ1 --- Estrategias de datos: S1, S2 y S3}
+  \small
+  \begin{itemize}
+    \item \textbf{S1 Holdout}: partición \emph{default} train/validación.
+    \item \textbf{S2 Repeated Holdout}: repite particiones aleatorias, cambiando el split en cada corrida.
+    \item \textbf{S3 5-Fold CV}: divide el dataset en folds y rota cuál queda para validación.
+  \end{itemize}
+
+  \vspace{0.4em}
+  \scriptsize
+  Con \textbf{S3}, todas las muestras participan del entrenamiento al menos en
+  un fold.
+\end{frame}
+
+\begin{frame}{EJ1 --- Curvas train/val}
+  \begin{center}
+    \includegraphics[width=0.97\linewidth,height=0.78\textheight,keepaspectratio]{../ej1/results/part2/data_strategy/data_strategy_overfitting_curves.png}
+  \end{center}
+\end{frame}
+
+\begin{frame}{EJ1 --- Estrategias de datos}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.5\linewidth}
+      \includegraphics[width=\linewidth,height=0.68\textheight,keepaspectratio]{../ej1/results/part2/data_strategy/data_strategy_f2.png}
+    \end{column}
+    \begin{column}{0.5\linewidth}
+      \includegraphics[width=\linewidth,height=0.68\textheight,keepaspectratio]{../ej1/results/part2/data_strategy/data_strategy_time.png}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.2em}
+  \scriptsize
+  Se selecciona \textbf{S3}.
+\end{frame}
+
+\begin{frame}{EJ1 --- Batch size y learning rate}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.39\linewidth}
+      \includegraphics[width=\linewidth]{../ej1/results/part2/batch_lr/batch_lr_heatmap_f2.png}
+    \end{column}
+    \begin{column}{0.61\linewidth}
+      \includegraphics[width=\linewidth]{../ej1/results/part2/batch_lr/batch_lr_time.png}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.2em}
+  \scriptsize
+  Se elige \textbf{batch\_size = 16}.
+\end{frame}
+
+\begin{frame}{EJ1 --- Screening de optimizadores}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.5\linewidth}
+      \includegraphics[width=\linewidth,height=0.68\textheight,keepaspectratio]{../ej1/results/part2/optimizer/optimizer_heatmap_f2.png}
+    \end{column}
+    \begin{column}{0.5\linewidth}
+      \includegraphics[width=\linewidth,height=0.68\textheight,keepaspectratio]{../ej1/results/part2/optimizer/optimizer_time.png}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.2em}
+  \scriptsize
+  Se elige \textbf{Momentum ($\alpha = 0.9$)}.
+\end{frame}
+
+\begin{frame}{EJ1 --- Modelo seleccionado: aprendizaje e interpretación}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.5\linewidth}
+      \includegraphics[width=\linewidth,height=0.68\textheight,keepaspectratio]{../ej1/results/part2/selected_model/selected_model_learning_curve.png}
+    \end{column}
+    \begin{column}{0.5\linewidth}
+      \includegraphics[width=\linewidth,height=0.68\textheight,keepaspectratio]{../ej1/results/part2/selected_model/selected_model_internal_function.png}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.2em}
+  \scriptsize
+  Modelo: \textbf{Momentum ($\alpha = 0.9$)}, \textbf{lr $=10^{-4}$},
+  \textbf{batch = 16} y \textbf{S3}.
+\end{frame}
+
+\begin{frame}{EJ1 --- Selección de umbral}
+  \begin{center}
+    \includegraphics[width=0.94\linewidth,height=0.74\textheight,keepaspectratio]{../ej1/results/part2/selected_model/selected_model_threshold_sweep.png}
+  \end{center}
+  \scriptsize
+  Se selecciona umbral \textbf{0.75}.
+\end{frame}
+
+\begin{frame}{EJ1 --- Matrices de confusión por umbral}
+  \centering
+  \begin{minipage}[t]{0.32\linewidth}
+    \centering
+    \scriptsize $t = 0.75$\\[0.2em]
+    \includegraphics[width=\linewidth,height=0.52\textheight,keepaspectratio]{../ej1/results/part2/selected_model/confusion_by_threshold/threshold_0_750.png}
+  \end{minipage}
+  \hfill
+  \begin{minipage}[t]{0.32\linewidth}
+    \centering
+    \scriptsize $t = 0.775$\\[0.2em]
+    \includegraphics[width=\linewidth,height=0.52\textheight,keepaspectratio]{../ej1/results/part2/selected_model/confusion_by_threshold/threshold_0_775.png}
+  \end{minipage}
+  \hfill
+  \begin{minipage}[t]{0.32\linewidth}
+    \centering
+    \scriptsize $t = 0.8$\\[0.2em]
+    \includegraphics[width=\linewidth,height=0.52\textheight,keepaspectratio]{../ej1/results/part2/selected_model/confusion_by_threshold/threshold_0_800.png}
+  \end{minipage}
+
+  \vspace{0.4em}
+  \scriptsize
+  Se selecciona \textbf{0.75}, dejando solo \textbf{4} casos de fraude real
+  sin detectar.
 \end{frame}
 
 % =============================================================

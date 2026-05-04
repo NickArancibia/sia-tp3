@@ -179,7 +179,7 @@ def plot_confusion_matrix(cm, path=None):
         [cm[1, 1], cm[1, 0]],
         [cm[0, 1], cm[0, 0]],
     ])
-    fig, ax = plt.subplots(figsize=(5, 4))
+    fig, ax = plt.subplots(figsize=(5.6, 4.4))
     im = ax.imshow(display_cm, cmap="Blues")
     ax.set_xticks([0, 1])
     ax.set_xticklabels(["Pred Fraude (1)", "Pred No Fraude (0)"])
@@ -190,9 +190,9 @@ def plot_confusion_matrix(cm, path=None):
         for j in range(2):
             ax.text(j, i, str(display_cm[i, j]), ha="center", va="center",
                     color="white" if display_cm[i, j] > thresh else "black", fontsize=12)
-    ax.set_title("Matriz de Confusión (clase positiva = Fraude)")
-    fig.colorbar(im)
-    fig.tight_layout()
+    ax.set_title("Matriz de Confusión\n(clase positiva = Fraude)", pad=12)
+    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    fig.tight_layout(pad=1.1)
     if path:
         save_fig(fig, path)
     return fig
@@ -219,6 +219,30 @@ def plot_threshold_sweep(thresholds, precisions, recalls, f1s, best_t, path=None
     ax.set_xlabel("Umbral de detección")
     ax.set_ylabel("Score")
     ax.set_title("Barrido de umbral de detección de fraude")
+    ax.legend()
+    if path:
+        save_fig(fig, path)
+    return fig
+
+
+def plot_cost_threshold_sweep(thresholds, costs, best_t, path=None, costs_std=None,
+                              best_label="Umbral seleccionado"):
+    thresholds = np.asarray(thresholds, dtype=float)
+    costs = np.asarray(costs, dtype=float)
+    fig, ax = plt.subplots(figsize=(9, 4))
+    ax.plot(thresholds, costs, label="Costo = 2*FN + FP", color="firebrick", linewidth=2)
+    if costs_std is not None:
+        costs_std = np.asarray(costs_std, dtype=float)
+        ax.fill_between(thresholds, costs - costs_std, costs + costs_std, alpha=0.18, color="firebrick")
+
+    best_idx = int(np.argmin(np.abs(thresholds - float(best_t))))
+    best_cost = float(costs[best_idx])
+    ax.axvline(float(best_t), color="black", linestyle="--", label=f"{best_label} = {float(best_t):.3f}")
+    ax.scatter([float(best_t)], [best_cost], color="black", s=32, zorder=3)
+    ax.set_xlabel("Umbral de detección")
+    ax.set_ylabel("Costo medio")
+    ax.set_title("Barrido de umbral minimizando 2*FN + FP")
+    ax.grid(alpha=0.2)
     ax.legend()
     if path:
         save_fig(fig, path)
@@ -332,11 +356,13 @@ def plot_metric_bars(labels, means, stds, ylabel, title, path=None):
     means = np.asarray(means, dtype=float)
     stds = np.asarray(stds, dtype=float)
 
-    fig, ax = plt.subplots(figsize=(8, 5))
+    fig_width = max(8, 1.1 * len(labels))
+    fig, ax = plt.subplots(figsize=(fig_width, 5))
     x = np.arange(len(labels))
     bars = ax.bar(x, means, yerr=stds, capsize=8, alpha=0.8, color="steelblue")
     ax.set_xticks(x)
-    ax.set_xticklabels(labels)
+    rotation = 15 if len(labels) > 6 else 0
+    ax.set_xticklabels(labels, rotation=rotation, ha="right" if rotation else "center")
     ax.set_ylabel(ylabel)
     ax.set_title(title)
 
@@ -361,15 +387,18 @@ def plot_metric_bars(labels, means, stds, ylabel, title, path=None):
     return fig
 
 
-def plot_grouped_metric_bars(labels, series, ylabel, title, path=None):
+def plot_grouped_metric_bars(labels, series, ylabel, title, path=None, yscale="linear",
+                             annotation_fontsize=8, annotation_stagger=0.0):
     labels = list(labels)
     series_names = list(series.keys())
     x = np.arange(len(labels))
     width = 0.8 / max(1, len(series_names))
 
-    fig, ax = plt.subplots(figsize=(9, 5))
+    fig_width = max(9, 1.2 * len(labels))
+    fig, ax = plt.subplots(figsize=(fig_width, 5))
     all_means = []
     all_stds = []
+    all_label_heights = []
 
     for idx, name in enumerate(series_names):
         means = np.asarray(series[name]["means"], dtype=float)
@@ -379,13 +408,20 @@ def plot_grouped_metric_bars(labels, series, ylabel, title, path=None):
         all_means.extend(means.tolist())
         all_stds.extend(stds.tolist())
         for bar, mean, std in zip(bars, means, stds):
+            if yscale == "log":
+                label_y = max(bar.get_height() + std, bar.get_height()) * 1.08
+                label_y *= 1.0 + float(annotation_stagger) * idx
+            else:
+                label_y = bar.get_height() + std + max(std * 0.4, 0.005)
+                label_y += max(bar.get_height(), 0.01) * float(annotation_stagger) * idx
+            all_label_heights.append(label_y)
             ax.text(
                 bar.get_x() + bar.get_width() / 2,
-                bar.get_height() + max(std * 0.4, 0.005),
+                label_y,
                 f"{mean:.3f}",
                 ha="center",
                 va="bottom",
-                fontsize=8,
+                fontsize=annotation_fontsize,
             )
 
     mean_max = max(all_means) if all_means else 1.0
@@ -397,7 +433,16 @@ def plot_grouped_metric_bars(labels, series, ylabel, title, path=None):
     ax.set_xticklabels(labels)
     ax.set_ylabel(ylabel)
     ax.set_title(title)
-    ax.set_ylim(max(0.0, mean_min - margin), min(1.05, mean_max + margin * 1.4))
+    if yscale == "log":
+        positive_means = [value for value in all_means if value > 0]
+        lower = min(positive_means) * 0.8 if positive_means else 1e-3
+        upper_base = max(mean + std for mean, std in zip(all_means, all_stds)) if all_means else 1.0
+        upper = max(upper_base * 1.35, max(all_label_heights, default=upper_base) * 1.1)
+        ax.set_yscale("log")
+        ax.set_ylim(lower, upper)
+    else:
+        upper = max(mean_max + margin * 1.4, max(all_label_heights, default=mean_max) + margin * 0.5)
+        ax.set_ylim(max(0.0, mean_min - margin), upper)
     ax.legend()
     fig.tight_layout()
     if path:
@@ -405,10 +450,10 @@ def plot_grouped_metric_bars(labels, series, ylabel, title, path=None):
     return fig
 
 
-def plot_heatmap(values, row_labels, col_labels, title, cbar_label, path=None, annotations=None):
+def plot_heatmap(values, row_labels, col_labels, title, cbar_label, path=None, annotations=None, cmap="viridis"):
     values = np.asarray(values, dtype=float)
     fig, ax = plt.subplots(figsize=(1.8 * len(col_labels) + 2, 0.8 * len(row_labels) + 3))
-    im = ax.imshow(values, cmap="viridis", aspect="auto")
+    im = ax.imshow(values, cmap=cmap, aspect="auto")
 
     ax.set_xticks(np.arange(len(col_labels)))
     ax.set_xticklabels(col_labels)
@@ -424,17 +469,18 @@ def plot_heatmap(values, row_labels, col_labels, title, cbar_label, path=None, a
     if annotations is None:
         annotations = [[f"{val:.4f}" for val in row] for row in values]
 
-    thresh = float(np.nanmean(values)) if np.isfinite(values).any() else 0.0
     for i in range(values.shape[0]):
         for j in range(values.shape[1]):
             text = annotations[i][j]
+            rgba = im.cmap(im.norm(values[i, j]))
+            luminance = 0.2126 * rgba[0] + 0.7152 * rgba[1] + 0.0722 * rgba[2]
             ax.text(
                 j,
                 i,
                 text,
                 ha="center",
                 va="center",
-                color="white" if values[i, j] < thresh else "black",
+                color="black" if luminance > 0.6 else "white",
                 fontsize=8,
             )
 
@@ -450,14 +496,22 @@ def plot_strategy_overfitting_curves(
     title="Overfitting por estrategia de datos",
     zoom_tail=False,
     show_std=True,
+    zoom_tail_start=0.7,
+    zoom_margin_ratio=0.15,
+    sharey=True,
+    per_axis_zoom=False,
+    tail_xlim=False,
+    y_limits=None,
 ):
     labels = list(strategy_curves.keys())
-    fig, axes = plt.subplots(1, len(labels), figsize=(6 * len(labels), 4.5), sharey=True)
+    fig, axes = plt.subplots(1, len(labels), figsize=(6 * len(labels), 4.5), sharey=sharey)
     if len(labels) == 1:
         axes = [axes]
 
     tail_lows = []
     tail_highs = []
+    axis_tail_ranges = {}
+    axis_tail_epochs = {}
 
     for ax, label in zip(axes, labels):
         train_arr = _to_runs(strategy_curves[label]["train"])
@@ -470,20 +524,26 @@ def plot_strategy_overfitting_curves(
         val_std = val_arr.std(axis=0)
 
         if zoom_tail:
-            tail_start = max(0, int(len(epochs) * 0.7))
+            tail_start = max(0, int(len(epochs) * float(zoom_tail_start)))
+            axis_tail_epochs[label] = int(epochs[tail_start]) if len(epochs) else 1
             train_low = train_mean[tail_start:] - (train_std[tail_start:] if show_std else 0.0)
             val_low = val_mean[tail_start:] - (val_std[tail_start:] if show_std else 0.0)
             train_high = train_mean[tail_start:] + (train_std[tail_start:] if show_std else 0.0)
             val_high = val_mean[tail_start:] + (val_std[tail_start:] if show_std else 0.0)
-            tail_lows.extend([np.min(train_low), np.min(val_low)])
-            tail_highs.extend([np.max(train_high), np.max(val_high)])
+            local_ymin = float(min(np.min(train_low), np.min(val_low)))
+            local_ymax = float(max(np.max(train_high), np.max(val_high)))
+            if per_axis_zoom:
+                axis_tail_ranges[label] = (local_ymin, local_ymax)
+            else:
+                tail_lows.extend([local_ymin])
+                tail_highs.extend([local_ymax])
 
-        ax.plot(epochs, train_mean, label="Train MSE", color="steelblue")
+        ax.plot(epochs, train_mean, label="Train MSE", color="steelblue", linewidth=1.3)
         if show_std and train_arr.shape[0] > 1:
             ax.fill_between(epochs, train_mean - train_std, train_mean + train_std,
                             alpha=0.2, color="steelblue")
 
-        ax.plot(epochs, val_mean, label="Val MSE", color="tomato")
+        ax.plot(epochs, val_mean, label="Val MSE", color="tomato", linewidth=1.3)
         if show_std and val_arr.shape[0] > 1:
             ax.fill_between(epochs, val_mean - val_std, val_mean + val_std,
                             alpha=0.2, color="tomato")
@@ -491,13 +551,25 @@ def plot_strategy_overfitting_curves(
         ax.set_title(label)
         ax.set_xlabel("Época")
         ax.grid(alpha=0.2)
+        if zoom_tail and tail_xlim and len(epochs) > 0:
+            ax.set_xlim(axis_tail_epochs[label], int(epochs[-1]))
 
     if zoom_tail:
-        ymin = float(min(tail_lows)) if tail_lows else 0.0
-        ymax = float(max(tail_highs)) if tail_highs else 1.0
-        margin = max((ymax - ymin) * 0.15, ymax * 0.02, 1e-4)
+        if per_axis_zoom:
+            for ax, label in zip(axes, labels):
+                ymin, ymax = axis_tail_ranges.get(label, (0.0, 1.0))
+                margin = max((ymax - ymin) * float(zoom_margin_ratio), ymax * 0.02, 1e-4)
+                ax.set_ylim(max(0.0, ymin - margin), ymax + margin)
+        else:
+            ymin = float(min(tail_lows)) if tail_lows else 0.0
+            ymax = float(max(tail_highs)) if tail_highs else 1.0
+            margin = max((ymax - ymin) * float(zoom_margin_ratio), ymax * 0.02, 1e-4)
+            for ax in axes:
+                ax.set_ylim(max(0.0, ymin - margin), ymax + margin)
+
+    if y_limits is not None:
         for ax in axes:
-            ax.set_ylim(max(0.0, ymin - margin), ymax + margin)
+            ax.set_ylim(*y_limits)
 
     axes[0].set_ylabel("MSE")
     axes[0].legend()

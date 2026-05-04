@@ -8,7 +8,14 @@ sys.path.insert(0, REPO_DIR)
 
 import pandas as pd
 
-from plots import plot_heatmap, plot_strategy_overfitting_curves
+from plots import plot_grouped_metric_bars, plot_heatmap
+
+
+def remove_stale_plots(out_dir, names):
+    for name in names:
+        path = os.path.join(out_dir, name)
+        if os.path.exists(path):
+            os.remove(path)
 
 
 def format_lr(lr):
@@ -29,9 +36,17 @@ def batch_label(batch_size):
     return str(batch_size)
 
 
+def heatmap_batch_label(batch_size):
+    batch_size = int(batch_size)
+    if batch_size > 1:
+        return f"mini{batch_size}"
+    return batch_label(batch_size)
+
+
 def main():
     out_dir = os.path.join(EJ1_DIR, "results", "part2", "batch_lr")
-    raw_df = pd.read_csv(os.path.join(out_dir, "batch_lr_raw.csv"))
+    remove_stale_plots(out_dir, ["batch_lr_overfitting_curves.png", "batch_lr_heatmap_aucpr.png"])
+
     summary_df = pd.read_csv(os.path.join(out_dir, "batch_lr_summary.csv"))
 
     batch_order = sorted(summary_df["batch_size"].astype(int).unique(), key=lambda value: (value == -1, value))
@@ -39,6 +54,7 @@ def main():
         batch_order = [value for value in batch_order if value != -1] + [-1]
     lr_order = sorted(summary_df["learning_rate"].astype(float).unique(), reverse=True)
     row_labels = [batch_label(batch) for batch in batch_order]
+    heatmap_row_labels = [heatmap_batch_label(batch) for batch in batch_order]
     col_labels = [format_lr(lr) for lr in lr_order]
 
     matrix = []
@@ -51,56 +67,44 @@ def main():
                 (summary_df["batch_size"].astype(int) == batch_size)
                 & (summary_df["learning_rate"].astype(float).round(12) == round(learning_rate, 12))
             ].iloc[0]
-            row.append(float(cell["mean_val_auc_pr"]))
-            ann_row.append(f"{float(cell['mean_val_auc_pr']):.4f}\n±{float(cell['std_val_auc_pr']):.4f}")
+            row.append(float(cell["mean_val_f2"]))
+            ann_row.append(f"{float(cell['mean_val_f2']):.4f}\n±{float(cell['std_val_f2']):.4f}")
         matrix.append(row)
         annotations.append(ann_row)
 
     plot_heatmap(
         matrix,
-        row_labels,
+        heatmap_row_labels,
         col_labels,
-        title="Heatmap batch size + learning rate (AUC-PR)",
-        cbar_label="AUC-PR en validación",
-        path=os.path.join(out_dir, "batch_lr_heatmap_aucpr.png"),
+        title="Heatmap batch size + learning rate (F2)",
+        cbar_label="F2 en validación",
+        path=os.path.join(out_dir, "batch_lr_heatmap_f2.png"),
         annotations=annotations,
+        cmap="RdYlGn",
     )
 
-    best_per_batch = []
-    for batch_size in batch_order:
-        rows = summary_df[summary_df["batch_size"].astype(int) == batch_size].copy()
-        rows = rows.sort_values(["mean_val_auc_pr", "std_val_auc_pr", "mean_val_recall"], ascending=[False, True, False])
-        best_per_batch.append(rows.iloc[0])
+    time_series = {}
+    for learning_rate, col_label in zip(lr_order, col_labels):
+        means = []
+        stds = []
+        for batch_size in batch_order:
+            cell = summary_df[
+                (summary_df["batch_size"].astype(int) == batch_size)
+                & (summary_df["learning_rate"].astype(float).round(12) == round(learning_rate, 12))
+            ].iloc[0]
+            means.append(float(cell["mean_elapsed_s"]))
+            stds.append(float(cell["std_elapsed_s"]))
+        time_series[f"lr={col_label}"] = {"means": means, "stds": stds}
 
-    curve_dict = {}
-    for row in best_per_batch:
-        config_name = row["config_name"]
-        learning_rate = float(row["learning_rate"])
-        batch_size = int(row["batch_size"])
-        label = f"{config_name}\nb={batch_label(batch_size)}, lr={format_lr(learning_rate)}"
-        rows = raw_df[
-            (raw_df["record_type"] == "curve_point")
-            & (raw_df["config_name"] == config_name)
-            & (raw_df["batch_size"].astype(int) == batch_size)
-            & (raw_df["learning_rate"].astype(float).round(12) == round(learning_rate, 12))
-            & (raw_df["split_kind"] != "final_retrain")
-        ]
-        train_runs = []
-        val_runs = []
-        for split_id in sorted(rows["split_id"].dropna().unique()):
-            split_rows = rows[rows["split_id"] == split_id].sort_values("epoch")
-            train_runs.append(split_rows["train_mse"].astype(float).tolist())
-            val_runs.append(split_rows["val_mse"].astype(float).tolist())
-        curve_dict[label] = {"train": train_runs, "val": val_runs}
-
-    plot_strategy_overfitting_curves(
-        curve_dict,
-        path=os.path.join(out_dir, "batch_lr_overfitting_curves.png"),
-        title="Overfitting por combinación batch size + learning rate",
-        zoom_tail=False,
-        show_std=True,
+    plot_grouped_metric_bars(
+        row_labels,
+        time_series,
+        ylabel="Tiempo total [s]",
+        title="Tiempo total por batch size y learning rate (escala log)",
+        path=os.path.join(out_dir, "batch_lr_time.png"),
+        yscale="log",
+        annotation_fontsize=5,
     )
-
 
 if __name__ == "__main__":
     main()

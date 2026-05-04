@@ -8,9 +8,8 @@ import numpy as np
 import pandas as pd
 
 from main_part2 import _make_perceptron, load_data
-from plots import (plot_confusion_matrix, plot_internal_function, plot_learning_curves,
-                   plot_grouped_metric_bars, plot_metric_bars, plot_pr, plot_strategy_overfitting_curves,
-                   plot_threshold_sweep)
+from plots import (plot_confusion_matrix, plot_internal_function, plot_grouped_metric_bars,
+                   plot_metric_bars, plot_pr, plot_strategy_overfitting_curves, plot_threshold_sweep)
 from shared.config_loader import load_config
 from shared.losses import mse
 from shared.metrics import auc, pr_curve, precision_recall_f1, threshold_sweep
@@ -726,17 +725,24 @@ def run_generalization(X, t, y, cfg, results_dir):
 
     selected_seed = _select_by_auc_pr(seed_summaries)
 
-    plot_learning_curves(
-        selected_seed["train_curves"],
-        selected_seed["val_curves"],
+    plot_strategy_overfitting_curves(
+        {
+            selected_strategy["strategy_label"]: {
+                "train": selected_seed["train_curves"],
+                "val": selected_seed["val_curves"],
+            }
+        },
         title=(
             f"Curvas del modelo seleccionado ({selected_strategy['strategy_label']}, "
-            f"scaler={selected_scaler['scaler']}, lr={_format_lr(selected_joint['learning_rate'])}, "
-            f"opt={selected_optimizer['optimizer']}, batch={_batch_label(selected_joint['batch_size'])}, "
+            f"scaler={selected_scaler['scaler']}, {selected_optimizer['optimizer']}, "
+            f"lr={_format_lr(selected_joint['learning_rate'])}, batch={_batch_label(selected_joint['batch_size'])}, "
             f"seed={selected_seed['seed']})"
         ),
         path=os.path.join(results_dir, "selected_model_learning_curve.png"),
-        zoom_tail=True,
+        zoom_tail=False,
+        show_std=False,
+        sharey=True,
+        y_limits=(0.0, 0.06),
     )
 
     threshold_curves = selected_seed["threshold_curves"]

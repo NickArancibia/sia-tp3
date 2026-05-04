@@ -33,6 +33,10 @@ RAW_FIELDNAMES = [
 ]
 
 
+def read_raw_csv(path):
+    return pd.read_csv(path, dtype=str, keep_default_na=False, na_filter=False)
+
+
 def copy_cfg(cfg, scaler_name=None, training_overrides=None):
     new_cfg = copy.deepcopy(cfg)
     if scaler_name is not None:
@@ -82,7 +86,7 @@ def append_rows_csv(path, rows, fieldnames=RAW_FIELDNAMES):
 def load_raw_df(path):
     if not os.path.exists(path):
         return pd.DataFrame(columns=RAW_FIELDNAMES)
-    raw_df = pd.read_csv(path)
+    raw_df = read_raw_csv(path)
     for field in RAW_FIELDNAMES:
         if field not in raw_df.columns:
             raw_df[field] = ""
@@ -92,7 +96,7 @@ def load_raw_df(path):
 def prepare_raw_file(path):
     if not os.path.exists(path):
         return pd.DataFrame(columns=RAW_FIELDNAMES)
-    raw_df = pd.read_csv(path)
+    raw_df = read_raw_csv(path)
     missing = [field for field in RAW_FIELDNAMES if field not in raw_df.columns]
     if not missing:
         for field in RAW_FIELDNAMES:
