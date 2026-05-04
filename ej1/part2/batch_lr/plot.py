@@ -100,10 +100,11 @@ def main():
         row_labels,
         time_series,
         ylabel="Tiempo total [s]",
-        title="Tiempo total por batch size y learning rate (escala log)",
+        title="Tiempo total por batch size y learning rate",
         path=os.path.join(out_dir, "batch_lr_time.png"),
         yscale="log",
         annotation_fontsize=5,
+        show_annotations=True,
     )
 
 if __name__ == "__main__":

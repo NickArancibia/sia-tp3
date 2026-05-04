@@ -86,18 +86,65 @@
       \toprule
       Parámetro & Valor \\
       \midrule
-      Dataset & 7\,500 transacciones, 10 features \\
-      Modelo & perceptrón simple no lineal \\
-      Activación & logistic ($\beta=1.0$) \\
-      Preprocesamiento & z-score + \texttt{hour\_of\_day} + \texttt{day\_of\_week} \\
+      Dataset & 7\,500 transacciones \\
+      Variables de entrada & 10 \\
+      Modelo & perceptrón simple lineal, perceptrón simple no lineal \\
+      Activación & identity, logistic ($\beta=1.0$) \\
+      Normalización & z-score \\
       Optimizadores & GD, Momentum ($\alpha=0.9$), Adam \\
       Learning rates & $10^{-1}, 10^{-2}, 10^{-3}, 10^{-4}$ \\
       Batch sizes & 1, 16, 32, 64, 128, full batch \\
-      Estrategias & S1 Holdout, S2 Repeated Holdout, S3 5-Fold CV \\
-      Test holdout & 15\% del dataset \\
+      Estrategias & Random-Split, K-Fold \\
+      Data-split & 85\% Train $\mid$ 15\% Test \\
       \bottomrule
     \end{tabular}
   \end{table}
+\end{frame}
+
+\begin{frame}{EJ1 --- Normalización con z-score}
+  \small
+  Usamos \textbf{z-score} para llevar las variables a una escala comparable
+  antes del entrenamiento.
+
+  \vspace{0.4em}
+  \[
+    z = \frac{x - \mu}{\sigma}
+  \]
+
+  \scriptsize
+  donde $\mu$ es la \textbf{media} y $\sigma$ es el \textbf{desvío estándar}.
+
+  \vspace{0.4em}
+  \scriptsize
+  Ejemplo real sobre \texttt{amount\_usd} del dataset:
+
+  \[
+    x =
+    \begin{bmatrix}
+      42.07
+    \end{bmatrix},
+    \qquad
+    \mu =
+    \begin{bmatrix}
+      109.07
+    \end{bmatrix},
+    \qquad
+    \sigma =
+    \begin{bmatrix}
+      157.74
+    \end{bmatrix}
+  \]
+
+  \[
+    z =
+    \begin{bmatrix}
+      \frac{42.07 - 109.07}{157.74}
+    \end{bmatrix}
+    =
+    \begin{bmatrix}
+      -0.425
+    \end{bmatrix}
+  \]
 \end{frame}
 
 \begin{frame}[plain]
@@ -129,6 +176,19 @@
   \begin{center}
     \includegraphics[width=0.92\linewidth,height=0.76\textheight,keepaspectratio]{../ej1/results/part1/learning_curve_linear_vs_nonlinear.png}
   \end{center}
+  \scriptsize
+  El perceptrón no lineal reduce el \textbf{MSE en 48.9\%} respecto del lineal.
+\end{frame}
+
+\begin{frame}{EJ1 --- Conclusiones Parte 1}
+  \small
+  \begin{itemize}
+    \item El perceptrón \textbf{lineal} muestra \textbf{underfitting}: no logra aproximar bien la salida de BigModel.
+    \item El modelo lineal \textbf{satura su capacidad} rápidamente y converge a un error más alto.
+    \item El perceptrón \textbf{no lineal} captura mejor la relación entrada-salida y mantiene la predicción en el rango $[0,1]$.
+    \item En este experimento, el no lineal logra un \textbf{MSE significativamente menor} sin mostrar una saturación comparable.
+    \item Para generalización, se selecciona el \textbf{perceptrón simple no lineal}.
+  \end{itemize}
 \end{frame}
 
 \begin{frame}[plain]
@@ -138,17 +198,61 @@
   \vfill
 \end{frame}
 
-\begin{frame}{EJ1 --- Estrategias de datos: S1, S2 y S3}
+\begin{frame}{EJ1 --- Setup experimental de generalización}
   \small
   \begin{itemize}
-    \item \textbf{S1 Holdout}: partición \emph{default} train/validación.
-    \item \textbf{S2 Repeated Holdout}: repite particiones aleatorias, cambiando el split en cada corrida.
-    \item \textbf{S3 5-Fold CV}: divide el dataset en folds y rota cuál queda para validación.
+    \item Manejo de datos: \textbf{S3 (5-Fold CV)}
+    \item Modelo: \textbf{perceptrón simple no lineal}
+    \item Activación: \textbf{logística}
+    \item Optimizador base: \textbf{GD}
+    \item Batch size base: \textbf{32}
+    \item Learning rate base: \textbf{$10^{-3}$}
+    \item Épocas máximas: \textbf{500}
+    \item Early stopping: \textbf{sí}
+    \item Semillas: \textbf{5 corridas} ($0,1,2,3,4$)
+  \end{itemize}
+
+  \vspace{0.3em}
+  \scriptsize
+  A partir de esta configuración base, se exploran \textbf{batch size},
+  \textbf{learning rate} y \textbf{optimizador}.
+\end{frame}
+
+\begin{frame}{EJ1 --- Métricas de evaluación}
+  \small
+  Como criterio de diseño, queremos \textbf{minimizar los falsos negativos (FN)}:
+  casos donde una operación fraudulenta se clasifica como no fraudulenta.
+  Aun así, también contemplamos el resto de los errores.
+
+  \vspace{0.4em}
+  \begin{itemize}
+    \item \textbf{F2}
+    \[
+      F_\beta = (1 + \beta^2) \cdot \frac{\mathrm{Precision}\,\mathrm{Recall}}{\beta^2\,\mathrm{Precision} + \mathrm{Recall}}
+      \qquad \Rightarrow \qquad
+      F_2 = 5 \cdot \frac{\mathrm{Precision}\,\mathrm{Recall}}{4\,\mathrm{Precision} + \mathrm{Recall}}
+    \]
+
+    \item \textbf{MSE}
+    \[
+      \mathrm{MSE} = \frac{1}{N} \sum_{i=1}^{N} \left(y_i - \hat{y}_i\right)^2
+    \]
+    \scriptsize donde $y_i$ es la salida de \textbf{BigModel} y $\hat{y}_i$ es la predicción de nuestro modelo.
+
+    \item \textbf{Costo = $2\,FN + FP$}
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{EJ1 --- Estrategias de datos}
+  \small
+  \begin{itemize}
+    \item \textbf{Random-Split}: partición aleatoria train/validación.
+    \item \textbf{K-Fold}: divide el dataset en folds y rota cuál queda para validación.
   \end{itemize}
 
   \vspace{0.4em}
   \scriptsize
-  Con \textbf{S3}, todas las muestras participan del entrenamiento al menos en
+  Con \textbf{K-Fold}, todas las muestras participan del entrenamiento al menos en
   un fold.
 \end{frame}
 
@@ -174,14 +278,16 @@
 \end{frame}
 
 \begin{frame}{EJ1 --- Batch size y learning rate}
-  \begin{columns}[T,onlytextwidth]
-    \begin{column}{0.39\linewidth}
-      \includegraphics[width=\linewidth]{../ej1/results/part2/batch_lr/batch_lr_heatmap_f2.png}
-    \end{column}
-    \begin{column}{0.61\linewidth}
-      \includegraphics[width=\linewidth]{../ej1/results/part2/batch_lr/batch_lr_time.png}
-    \end{column}
-  \end{columns}
+  \begin{center}
+    \includegraphics[width=0.9\linewidth,height=0.76\textheight,keepaspectratio]{../ej1/results/part2/batch_lr/batch_lr_heatmap_f2.png}
+  \end{center}
+
+\end{frame}
+
+\begin{frame}{EJ1 --- Tiempo por batch size y learning rate}
+  \begin{center}
+    \includegraphics[width=0.94\linewidth,height=0.76\textheight,keepaspectratio]{../ej1/results/part2/batch_lr/batch_lr_time.png}
+  \end{center}
 
   \vspace{0.2em}
   \scriptsize
@@ -189,14 +295,16 @@
 \end{frame}
 
 \begin{frame}{EJ1 --- Screening de optimizadores}
-  \begin{columns}[T,onlytextwidth]
-    \begin{column}{0.5\linewidth}
-      \includegraphics[width=\linewidth,height=0.68\textheight,keepaspectratio]{../ej1/results/part2/optimizer/optimizer_heatmap_f2.png}
-    \end{column}
-    \begin{column}{0.5\linewidth}
-      \includegraphics[width=\linewidth,height=0.68\textheight,keepaspectratio]{../ej1/results/part2/optimizer/optimizer_time.png}
-    \end{column}
-  \end{columns}
+  \begin{center}
+    \includegraphics[width=0.9\linewidth,height=0.76\textheight,keepaspectratio]{../ej1/results/part2/optimizer/optimizer_heatmap_f2.png}
+  \end{center}
+
+\end{frame}
+
+\begin{frame}{EJ1 --- Tiempo por optimizador}
+  \begin{center}
+    \includegraphics[width=0.94\linewidth,height=0.76\textheight,keepaspectratio]{../ej1/results/part2/optimizer/optimizer_time.png}
+  \end{center}
 
   \vspace{0.2em}
   \scriptsize
@@ -251,6 +359,36 @@
   \scriptsize
   Se selecciona \textbf{0.75}, dejando solo \textbf{4} casos de fraude real
   sin detectar.
+\end{frame}
+
+\begin{frame}{EJ1 --- Modelo final para el cliente}
+  \small
+  \begin{itemize}
+    \item Estrategia de datos: \textbf{S3 (5-Fold CV)}
+    \item Modelo: \textbf{perceptrón simple no lineal} con activación \textbf{logística}
+    \item Optimizador: \textbf{Momentum ($\alpha = 0.9$)}
+    \item Learning rate: \textbf{$10^{-4}$}
+    \item Batch size: \textbf{16}
+    \item Umbral recomendado: \textbf{0.75}
+  \end{itemize}
+
+  \vspace{0.4em}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.5\linewidth}
+      \begin{itemize}
+        \item \textbf{Precision}: $0.7683$
+        \item \textbf{Recall}: $0.9692$
+        \item \textbf{F1}: $0.8571$
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.5\linewidth}
+      \begin{itemize}
+        \item \textbf{F2}: $0.9211$
+        \item \textbf{MSE}: $0.00590$
+        \item \textbf{Costo} $(2FN + FP)$: $46$
+      \end{itemize}
+    \end{column}
+  \end{columns}
 \end{frame}
 
 % =============================================================

@@ -388,7 +388,8 @@ def plot_metric_bars(labels, means, stds, ylabel, title, path=None):
 
 
 def plot_grouped_metric_bars(labels, series, ylabel, title, path=None, yscale="linear",
-                             annotation_fontsize=8, annotation_stagger=0.0):
+                             annotation_fontsize=8, annotation_stagger=0.0,
+                             show_annotations=True):
     labels = list(labels)
     series_names = list(series.keys())
     x = np.arange(len(labels))
@@ -414,15 +415,16 @@ def plot_grouped_metric_bars(labels, series, ylabel, title, path=None, yscale="l
             else:
                 label_y = bar.get_height() + std + max(std * 0.4, 0.005)
                 label_y += max(bar.get_height(), 0.01) * float(annotation_stagger) * idx
-            all_label_heights.append(label_y)
-            ax.text(
-                bar.get_x() + bar.get_width() / 2,
-                label_y,
-                f"{mean:.3f}",
-                ha="center",
-                va="bottom",
-                fontsize=annotation_fontsize,
-            )
+            if show_annotations:
+                all_label_heights.append(label_y)
+                ax.text(
+                    bar.get_x() + bar.get_width() / 2,
+                    label_y,
+                    f"{mean:.3f}",
+                    ha="center",
+                    va="bottom",
+                    fontsize=annotation_fontsize,
+                )
 
     mean_max = max(all_means) if all_means else 1.0
     mean_min = min(all_means) if all_means else 0.0

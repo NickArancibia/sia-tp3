@@ -83,6 +83,8 @@ def main():
         ylabel="Tiempo total [s]",
         title="Tiempo total por optimizador y learning rate",
         path=os.path.join(out_dir, "optimizer_time.png"),
+        annotation_fontsize=5,
+        show_annotations=True,
     )
 
 

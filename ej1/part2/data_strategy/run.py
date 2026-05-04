@@ -41,9 +41,8 @@ SUMMARY_PATH = os.path.join(OUT_DIR, "strategy_summary.csv")
 CHECKPOINT_DIR = os.path.join(OUT_DIR, "checkpoints")
 
 STRATEGY_LABELS = {
-    "S1": "S1 Holdout",
-    "S2": "S2 Repeated Holdout",
-    "S3": "S3 5-Fold CV",
+    "S1": "Random-Split",
+    "S3": "K-Fold",
 }
 
 SUMMARY_FIELDNAMES = [
@@ -164,7 +163,7 @@ def main():
     print("=" * 60)
 
     summaries = []
-    for strategy in ("S1", "S2", "S3"):
+    for strategy in ("S1", "S3"):
         split_specs = build_splits(strategy, train_val_idx, y, split_cfg)
 
         for seed in seeds:

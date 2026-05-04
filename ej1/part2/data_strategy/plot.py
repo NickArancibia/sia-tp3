@@ -33,6 +33,7 @@ def main():
 
     raw_df = pd.read_csv(raw_path)
     summary_df = pd.read_csv(summary_path)
+    summary_df = summary_df[summary_df["strategy"].isin(["S1", "S3"])].copy()
 
     plot_metric_bars(
         summary_df["strategy_label"].tolist(),
