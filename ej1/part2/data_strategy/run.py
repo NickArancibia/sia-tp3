@@ -42,7 +42,7 @@ CHECKPOINT_DIR = os.path.join(OUT_DIR, "checkpoints")
 
 STRATEGY_LABELS = {
     "S1": "Random-Split",
-    "S3": "K-Fold",
+    "S3": "5-Fold",
 }
 
 SUMMARY_FIELDNAMES = [

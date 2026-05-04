@@ -173,18 +173,14 @@ def plot_pr(precisions, recalls, auc_val, path=None):
 
 
 def plot_confusion_matrix(cm, path=None):
-    # Internal layout is [[TN, FP], [FN, TP]]. Reorder for the report view:
-    # [[TP, FN], [FP, TN]] so it matches the convention used in class.
-    display_cm = np.array([
-        [cm[1, 1], cm[1, 0]],
-        [cm[0, 1], cm[0, 0]],
-    ])
+    # Keep the standard binary classification layout [[TN, FP], [FN, TP]].
+    display_cm = np.asarray(cm, dtype=int)
     fig, ax = plt.subplots(figsize=(5.6, 4.4))
     im = ax.imshow(display_cm, cmap="Blues")
     ax.set_xticks([0, 1])
-    ax.set_xticklabels(["Pred Fraude (1)", "Pred No Fraude (0)"])
+    ax.set_xticklabels(["Pred No Fraude (0)", "Pred Fraude (1)"])
     ax.set_yticks([0, 1])
-    ax.set_yticklabels(["Real Fraude (1)", "Real No Fraude (0)"])
+    ax.set_yticklabels(["Real No Fraude (0)", "Real Fraude (1)"])
     thresh = display_cm.max() / 2.0
     for i in range(2):
         for j in range(2):

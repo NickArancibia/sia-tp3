@@ -72,33 +72,25 @@
 
 \begin{frame}{EJ1 --- Contexto y setup}
   \small
-  \textbf{Objetivo}: aproximar la probabilidad de fraude de \emph{BigModel}
-  con un perceptrón simple barato de inferir.
-
-  \vspace{0.3em}
-  \textbf{Criterio de negocio}: minimizar \textbf{falsos negativos}.
+  \textbf{Problema}: CompanyX usa un modelo grande y caro, \textbf{BigModel},
+  para estimar la probabilidad de fraude en transacciones online.
 
   \vspace{0.4em}
-  \begin{table}
-    \centering
-    \scriptsize
-    \begin{tabular}{ll}
-      \toprule
-      Parámetro & Valor \\
-      \midrule
-      Dataset & 7\,500 transacciones \\
-      Variables de entrada & 10 \\
-      Modelo & perceptrón simple lineal, perceptrón simple no lineal \\
-      Activación & identity, logistic ($\beta=1.0$) \\
-      Normalización & z-score \\
-      Optimizadores & GD, Momentum ($\alpha=0.9$), Adam \\
-      Learning rates & $10^{-1}, 10^{-2}, 10^{-3}, 10^{-4}$ \\
-      Batch sizes & 1, 16, 32, 64, 128, full batch \\
-      Estrategias & Random-Split, K-Fold \\
-      Data-split & 85\% Train $\mid$ 15\% Test \\
-      \bottomrule
-    \end{tabular}
-  \end{table}
+  \textbf{Objetivo}: construir un modelo más chico, \textbf{TinyModel}, que
+  aproxime la salida de BigModel con menor costo de inferencia.
+
+  \vspace{0.4em}
+  \textbf{Qué se pide estudiar:}
+  \begin{itemize}
+    \item Comparar un perceptrón simple lineal contra uno no lineal.
+    \item Elegir el modelo con mejor capacidad de aprendizaje para generalización.
+    \item Recomendar un umbral de detección de fraude.
+  \end{itemize}
+
+  \vspace{0.3em}
+  \textbf{Criterio de negocio}: priorizar la reducción de falsos negativos,
+  porque un fraude real no detectado es más costoso que revisar una operación
+  sospechosa.
 \end{frame}
 
 \begin{frame}{EJ1 --- Normalización con z-score}
@@ -154,6 +146,27 @@
   \vfill
 \end{frame}
 
+\begin{frame}{EJ1 --- Parámetros de la Parte 1}
+  \begin{table}
+    \centering
+    \scriptsize
+    \begin{tabular}{ll}
+      \toprule
+      Parámetro & Valor \\
+      \midrule
+      Modelos comparados & lineal (identity) vs no lineal (logistic) \\
+      Activaciones & identity, logistic ($\beta=1.0$) \\
+      Optimización & GD \\
+      Learning rate & $10^{-3}$ \\
+      Batch size & 32 \\
+      Épocas & 500 \\
+      Normalización & z-score \\
+      Semillas & $0,1,2,3,4$ \\
+      \bottomrule
+    \end{tabular}
+  \end{table}
+\end{frame}
+
 \begin{frame}{EJ1 --- Target vs predicción}
   \begin{center}
     \includegraphics[width=0.93\linewidth,height=0.72\textheight,keepaspectratio]{../ej1/results/part1/target_vs_prediction_linear_nonlinear.png}
@@ -199,20 +212,26 @@
 \end{frame}
 
 \begin{frame}{EJ1 --- Setup experimental de generalización}
-  \small
-  \begin{itemize}
-    \item Manejo de datos: \textbf{S3 (5-Fold CV)}
-    \item Modelo: \textbf{perceptrón simple no lineal}
-    \item Activación: \textbf{logística}
-    \item Optimizador base: \textbf{GD}
-    \item Batch size base: \textbf{32}
-    \item Learning rate base: \textbf{$10^{-3}$}
-    \item Épocas máximas: \textbf{500}
-    \item Early stopping: \textbf{sí}
-    \item Semillas: \textbf{5 corridas} ($0,1,2,3,4$)
-  \end{itemize}
+  \begin{table}
+    \centering
+    \scriptsize
+    \begin{tabular}{ll}
+      \toprule
+      Parámetro & Valor \\
+      \midrule
+      Manejo de datos & 5-Fold \\
+      Modelo & perceptrón simple no lineal \\
+      Activación & logística \\
+      Optimizador base & GD \\
+      Batch size base & 32 \\
+      Learning rate base & $10^{-3}$ \\
+      Épocas máximas & 500 \\
+      Early stopping & sí \\
+      Semillas & $0,1,2,3,4$ \\
+      \bottomrule
+    \end{tabular}
+  \end{table}
 
-  \vspace{0.3em}
   \scriptsize
   A partir de esta configuración base, se exploran \textbf{batch size},
   \textbf{learning rate} y \textbf{optimizador}.
@@ -247,13 +266,12 @@
   \small
   \begin{itemize}
     \item \textbf{Random-Split}: partición aleatoria train/validación.
-    \item \textbf{K-Fold}: divide el dataset en folds y rota cuál queda para validación.
+    \item \textbf{5-Fold}: divide el dataset en folds y rota cuál queda para validación.
   \end{itemize}
 
-  \vspace{0.4em}
-  \scriptsize
-  Con \textbf{K-Fold}, todas las muestras participan del entrenamiento al menos en
-  un fold.
+  \begin{center}
+    \includegraphics[width=0.8\linewidth,height=0.55\textheight,keepaspectratio]{kfold.png}
+  \end{center}
 \end{frame}
 
 \begin{frame}{EJ1 --- Curvas train/val}
