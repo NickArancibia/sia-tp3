@@ -555,6 +555,8 @@ def run_generalization(X, t, y, cfg, results_dir):
         path=os.path.join(results_dir, "data_strategy_overfitting_curves.png"),
         zoom_tail=True,
         show_std=False,
+        y_limits=(0.0, 0.03),
+        legend_each_axis=True,
     )
 
     scaler_summaries = []

@@ -39,7 +39,7 @@ SUMMARY_FIELDNAMES = [
     "train_mse", "test_mse", "train_cost", "test_cost", "train_cost_mean", "test_cost_mean",
 ]
 
-THRESHOLD_MIN = 0.75
+THRESHOLD_MIN = 0.0
 THRESHOLD_MAX = 1.0
 THRESHOLD_STEP = 0.025
 THRESHOLD_GRID = np.round(np.arange(THRESHOLD_MIN, THRESHOLD_MAX + THRESHOLD_STEP / 2, THRESHOLD_STEP), 3)

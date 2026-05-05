@@ -122,9 +122,12 @@ def plot_multi_learning_curves(epoch_curves_runs, title="Learning Curves", path=
     return fig
 
 
-def plot_learning_curve_comparison(epoch_curves_runs, title="Learning Curves", path=None):
+def plot_learning_curve_comparison(epoch_curves_runs, title="Learning Curves", path=None,
+                                   zoom_tail=False, y_max=None):
     colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
     fig, ax = plt.subplots(figsize=(9, 5))
+    tail_lows = []
+    tail_highs = []
 
     for idx, (label, runs) in enumerate(epoch_curves_runs.items()):
         arr = _to_runs(runs)
@@ -135,6 +138,21 @@ def plot_learning_curve_comparison(epoch_curves_runs, title="Learning Curves", p
         ax.plot(epochs, mean, label=label, color=color)
         if arr.shape[0] > 1:
             ax.fill_between(epochs, mean - std, mean + std, alpha=0.2, color=color)
+
+        if zoom_tail:
+            tail_start = max(0, int(len(epochs) * 0.7))
+            tail_lows.append(float(np.min(mean[tail_start:] - std[tail_start:])))
+            tail_highs.append(float(np.max(mean[tail_start:] + std[tail_start:])))
+
+    if zoom_tail and tail_lows and tail_highs:
+        ymin = min(tail_lows)
+        ymax = max(tail_highs)
+        margin = max((ymax - ymin) * 0.15, ymax * 0.02, 1e-4)
+        ax.set_ylim(max(0.0, ymin - margin), ymax + margin)
+
+    if y_max is not None:
+        ymin, _ = ax.get_ylim()
+        ax.set_ylim(ymin, float(y_max))
 
     ax.set_xlabel("Época")
     ax.set_ylabel("MSE")
@@ -222,7 +240,7 @@ def plot_threshold_sweep(thresholds, precisions, recalls, f1s, best_t, path=None
 
 
 def plot_cost_threshold_sweep(thresholds, costs, best_t, path=None, costs_std=None,
-                              best_label="Umbral seleccionado"):
+                              best_label="Umbral seleccionado", x_limits=None):
     thresholds = np.asarray(thresholds, dtype=float)
     costs = np.asarray(costs, dtype=float)
     fig, ax = plt.subplots(figsize=(9, 4))
@@ -235,6 +253,12 @@ def plot_cost_threshold_sweep(thresholds, costs, best_t, path=None, costs_std=No
     best_cost = float(costs[best_idx])
     ax.axvline(float(best_t), color="black", linestyle="--", label=f"{best_label} = {float(best_t):.3f}")
     ax.scatter([float(best_t)], [best_cost], color="black", s=32, zorder=3)
+    if x_limits is not None:
+        ax.set_xlim(*x_limits)
+    xticks = np.asarray(ax.get_xticks(), dtype=float)
+    if not np.any(np.isclose(xticks, float(best_t), atol=1e-9)):
+        xticks = np.sort(np.append(xticks, float(best_t)))
+        ax.set_xticks(xticks)
     ax.set_xlabel("Umbral de detección")
     ax.set_ylabel("Costo medio")
     ax.set_title("Barrido de umbral minimizando 2*FN + FP")
@@ -245,16 +269,21 @@ def plot_cost_threshold_sweep(thresholds, costs, best_t, path=None, costs_std=No
     return fig
 
 
-def plot_target_vs_prediction(targets, predictions, path=None):
+def plot_target_vs_prediction(targets, predictions, path=None, axis_limits=None):
     targets = np.asarray(targets)
     predictions = np.asarray(predictions)
 
     fig, ax = plt.subplots(figsize=(6, 6))
     ax.scatter(targets, predictions, alpha=0.35, s=18, color="slateblue")
 
-    lo = float(min(targets.min(), predictions.min()))
-    hi = float(max(targets.max(), predictions.max()))
+    if axis_limits is None:
+        lo = float(min(targets.min(), predictions.min()))
+        hi = float(max(targets.max(), predictions.max()))
+    else:
+        lo, hi = axis_limits
     ax.plot([lo, hi], [lo, hi], "k--", linewidth=1.0, label="Ideal: y = x")
+    ax.set_xlim(lo, hi)
+    ax.set_ylim(lo, hi)
 
     ax.set_xlabel("Target (BigModel)")
     ax.set_ylabel("Predicción del perceptrón")
@@ -266,7 +295,8 @@ def plot_target_vs_prediction(targets, predictions, path=None):
     return fig
 
 
-def plot_internal_function(pre_activations, targets, activation, beta=1.0, path=None):
+def plot_internal_function(pre_activations, targets, activation, beta=1.0, path=None,
+                           x_limits=None, y_limits=None):
     pre_activations = np.asarray(pre_activations)
     targets = np.asarray(targets)
 
@@ -279,6 +309,11 @@ def plot_internal_function(pre_activations, targets, activation, beta=1.0, path=
                label="Targets BigModel")
     ax.plot(h_sorted, curve, color="crimson", linewidth=2.0,
             label=f"Curva del perceptrón ({activation})")
+
+    if x_limits is not None:
+        ax.set_xlim(*x_limits)
+    if y_limits is not None:
+        ax.set_ylim(*y_limits)
 
     ax.set_xlabel("Score interno h = w·x + b")
     ax.set_ylabel("Target / predicción")
@@ -500,6 +535,7 @@ def plot_strategy_overfitting_curves(
     per_axis_zoom=False,
     tail_xlim=False,
     y_limits=None,
+    legend_each_axis=False,
 ):
     labels = list(strategy_curves.keys())
     fig, axes = plt.subplots(1, len(labels), figsize=(6 * len(labels), 4.5), sharey=sharey)
@@ -570,7 +606,11 @@ def plot_strategy_overfitting_curves(
             ax.set_ylim(*y_limits)
 
     axes[0].set_ylabel("MSE")
-    axes[0].legend()
+    if legend_each_axis:
+        for ax in axes:
+            ax.legend()
+    else:
+        axes[0].legend()
     fig.suptitle(title, fontsize=13)
     fig.tight_layout()
     if path:

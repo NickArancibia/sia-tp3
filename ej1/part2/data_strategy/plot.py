@@ -75,7 +75,8 @@ def main():
         zoom_tail=False,
         show_std=False,
         sharey=True,
-        y_limits=(0.0, 0.06),
+        y_limits=(0.0, 0.03),
+        legend_each_axis=True,
     )
 
 

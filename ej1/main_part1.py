@@ -6,14 +6,15 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 import numpy as np
 import pandas as pd
 
+from shared.activations import activate
 from shared.config_loader import load_config
 from shared.losses import mse
 from shared.optimizers import build_optimizer
 from shared.perceptron import SimplePerceptron
 from shared.preprocessing import build_scaler
-from plots import (plot_internal_function_comparison,
+from plots import (plot_internal_function,
                    plot_learning_curve_comparison,
-                   plot_target_vs_prediction_comparison)
+                   plot_target_vs_prediction)
 
 
 def load_data(cfg):
@@ -54,6 +55,19 @@ def _representative_run(runs):
     return runs[rep_idx]
 
 
+def _slugify_activation(name):
+    return name.lower().replace(" ", "_").replace("(", "").replace(")", "")
+
+
+def _autoscale_limits(values, margin_ratio=0.05, min_span=1e-6):
+    arr = np.asarray(values, dtype=float)
+    lo = float(np.min(arr))
+    hi = float(np.max(arr))
+    span = max(hi - lo, min_span)
+    margin = span * margin_ratio
+    return lo - margin, hi + margin
+
+
 def run_part1(X, t, cfg, results_dir):
     print("\n" + "=" * 60)
     print("PARTE 1 — Análisis de aprendizaje (todos los datos)")
@@ -73,6 +87,7 @@ def run_part1(X, t, cfg, results_dir):
     model_specs = [
         ("identity", "Lineal (identidad)"),
         (cfg["model"]["activation"], f"No Lineal ({cfg['model']['activation']})"),
+        ("relu", "No Lineal (ReLU)"),
     ]
 
     model_runs = {label: [] for _, label in model_specs}
@@ -118,8 +133,9 @@ def run_part1(X, t, cfg, results_dir):
     }
     plot_learning_curve_comparison(
         learning_runs,
-        title=f"Parte 1 — Lineal vs No Lineal ({len(seeds)} seeds, media ± std)",
-        path=os.path.join(results_dir, "learning_curve_linear_vs_nonlinear.png"),
+        title=f"Parte 1 — Lineal vs no lineal ({len(seeds)} seeds, media ± std)",
+        path=os.path.join(results_dir, "learning_curve_linear_nonlinear_relu.png"),
+        y_max=0.06,
     )
 
     rep_runs = []
@@ -128,22 +144,47 @@ def run_part1(X, t, cfg, results_dir):
         rep_runs.append({
             "label": label,
             "activation": activation,
-            "beta": beta,
-            "targets": t,
             "predictions": rep["predictions"],
             "pre_activations": rep["pre_activations"],
         })
 
-    plot_internal_function_comparison(
-        rep_runs,
-        title="Parte 1 — Función interna lineal vs no lineal",
-        path=os.path.join(results_dir, "internal_function_linear_vs_nonlinear.png"),
-    )
-    plot_target_vs_prediction_comparison(
-        rep_runs,
-        title="Parte 1 — Target de BigModel vs predicción de TinyModel",
-        path=os.path.join(results_dir, "target_vs_prediction_linear_nonlinear.png"),
-    )
+    all_predictions = np.concatenate([np.asarray(run["predictions"]) for run in rep_runs])
+    prediction_lo = float(min(np.min(t), np.min(all_predictions)))
+    prediction_hi = float(max(np.max(t), np.max(all_predictions)))
+
+    rep_by_activation = {run["activation"]: run for run in rep_runs}
+    base_activation = cfg["model"]["activation"]
+    identity_run = rep_by_activation["identity"]
+    base_nonlinear_run = rep_by_activation[base_activation]
+
+    linear_x_limits = _autoscale_limits(identity_run["pre_activations"])
+    nonlinear_x_limits = _autoscale_limits(base_nonlinear_run["pre_activations"])
+    legacy_y_values = np.concatenate([
+        np.asarray(t, dtype=float),
+        activate(np.asarray(identity_run["pre_activations"]), "identity", beta),
+        activate(np.asarray(base_nonlinear_run["pre_activations"]), base_activation, beta),
+    ])
+    internal_y_limits = _autoscale_limits(legacy_y_values)
+
+    for run in rep_runs:
+        activation = run["activation"]
+        slug = _slugify_activation(activation)
+        x_limits = nonlinear_x_limits if activation == base_activation else linear_x_limits
+        plot_internal_function(
+            run["pre_activations"],
+            t,
+            activation=activation,
+            beta=beta,
+            x_limits=x_limits,
+            y_limits=internal_y_limits,
+            path=os.path.join(results_dir, f"internal_function_{slug}.png"),
+        )
+        plot_target_vs_prediction(
+            t,
+            run["predictions"],
+            axis_limits=(prediction_lo, prediction_hi),
+            path=os.path.join(results_dir, f"target_vs_prediction_{slug}.png"),
+        )
     print("Gráficos guardados en results/part1/")
 
 

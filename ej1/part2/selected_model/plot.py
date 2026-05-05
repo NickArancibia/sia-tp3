@@ -156,6 +156,7 @@ def main():
         path=os.path.join(out_dir, "selected_model_threshold_sweep.png"),
         costs_std=threshold_sweep["costs_std"],
         best_label="Umbral seleccionado",
+        x_limits=(0.0, 1.0),
     )
 
     test_rows = sample_rows(raw_df, selected_seed, "test")
