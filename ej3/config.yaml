@@ -1,7 +1,7 @@
 model:
   type: "mlp"
-  architecture: [784, 256, 128, 10]
-  hidden_activation: "tanh"
+  architecture: [784, 512, 10]
+  hidden_activation: "relu"
   output_activation: "logistic"
   beta: 1.0
   initializer: "random_normal"
@@ -9,21 +9,22 @@ model:
 
 training:
   optimizer: "adam"
-  learning_rate: 0.0005
+  learning_rate: 0.0002
   batch_size: 64
   shuffle: true
-  epochs: 300
+  epochs: 400
   loss: "mse"
   momentum: 0.9
   adam_betas: [0.9, 0.999]
   adam_eps: 1.0e-8
-  weight_decay: 1.0e-5
+  weight_decay: 1.0e-4
+  online_augmentation: true
   early_stopping:
     enabled: true
-    patience: 30
+    patience: 80
 
 data:
-  train_path: "data/more_digits.csv"
+  train_path: "data/merged_augmented.csv"
   test_path: "../ej2/data/digits_test.csv"
   preprocess:
     feature_scaler: "z-score"
@@ -31,11 +32,11 @@ data:
   split:
     val_frac: 0.2
     stratify: true
-    seed: 42
+    seed: 0
 
 experiment:
-  name: "ej3_baseline"
-  seed: 42
+  name: "onlineaug_relu_512_adam_lr2e-4_bs64_wd1e-4"
+  seed: 0
   save_plots: true
   log_every: 5
   save_model: true

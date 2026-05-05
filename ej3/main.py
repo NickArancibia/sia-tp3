@@ -14,7 +14,7 @@ REPO_DIR = os.path.dirname(EJ3_DIR)
 sys.path.insert(0, REPO_DIR)
 sys.path.insert(0, EJ3_DIR)
 
-from common import (build_mlp, evaluate_on_test, prepare_data, train_model)
+from common import (_aug_batch, build_mlp, evaluate_on_test, prepare_data, train_model)
 from shared.config_loader import load_config
 from shared.optimizers import build_optimizer
 from shared.utils import (plot_accuracy_curves, plot_confusion_matrix,
@@ -45,6 +45,7 @@ def run_one(cfg, verbose=True):
         init_scale=cfg["model"].get("init_scale", 0.1),
         seed=seed,
         weight_decay=cfg["training"].get("weight_decay", 0.0),
+        loss_name=cfg["training"].get("loss", "mse"),
     )
     opt = build_optimizer(cfg["training"])
     es_cfg = cfg["training"].get("early_stopping", {})
@@ -57,11 +58,13 @@ def run_one(cfg, verbose=True):
         n_params = sum(W.size + b.size for W, b in zip(model.weights, model.biases))
         print(f"Parameters: {n_params:,}\n")
 
+    online_aug = cfg["training"].get("online_augmentation", False)
     hist = train_model(model, data, opt,
                        max_epochs=cfg["training"]["epochs"],
                        batch_size=cfg["training"]["batch_size"],
                        early_stopping_patience=patience,
-                       verbose=verbose, seed=seed)
+                       verbose=verbose, seed=seed,
+                       augment_fn=_aug_batch if online_aug else None)
     ev = evaluate_on_test(model, data)
 
     if verbose:

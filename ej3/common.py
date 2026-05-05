@@ -17,6 +17,7 @@ REPO_DIR = os.path.dirname(EJ3_DIR)
 sys.path.insert(0, REPO_DIR)
 
 import numpy as np
+from scipy.ndimage import rotate, shift
 
 from shared.digit_dataset_loader import load_dataset
 from shared.metrics import (accuracy, classify_from_output,
@@ -32,6 +33,26 @@ from shared.regularization import EarlyStopping
 TRAIN_CSV = os.path.join(EJ3_DIR, "data", "more_digits.csv")
 TEST_CSV = os.path.join(os.path.dirname(EJ3_DIR), "ej2", "data", "digits_test.csv")
 RESULTS_PART2 = os.path.join(EJ3_DIR, "results", "part2")
+
+
+_IMG_SHAPE = (28, 28)
+
+
+def _aug_batch(X_batch: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+    """Per-batch online augmentation: rotation ±5°, translation ±2px, noise std=0.1.
+
+    Operates on z-score normalized data — spatial transforms are pixel-order ops
+    so normalization doesn't affect them; noise std=0.1 ≈ 0.03 in [0,1] pixel space.
+    """
+    out = np.empty_like(X_batch)
+    for i, flat in enumerate(X_batch):
+        img = flat.reshape(_IMG_SHAPE)
+        img = rotate(img, rng.uniform(-5.0, 5.0), reshape=False, mode="nearest")
+        dy, dx = rng.uniform(-2.0, 2.0, size=2)
+        img = shift(img, [dy, dx], mode="nearest")
+        img = img + rng.normal(0.0, 0.1, img.shape)
+        out[i] = img.flatten()
+    return out
 
 
 def prepare_data(train_csv=TRAIN_CSV, test_csv=TEST_CSV, val_frac=0.2,
@@ -80,7 +101,7 @@ def prepare_data(train_csv=TRAIN_CSV, test_csv=TEST_CSV, val_frac=0.2,
 
 
 def build_mlp(arch, hidden_act="tanh", out_act="logistic", beta=1.0,
-              init_scale=0.1, seed=42, weight_decay=0.0):
+              init_scale=0.1, seed=42, weight_decay=0.0, loss_name="mse"):
     return MLP(
         architecture=arch,
         hidden_activation=hidden_act,
@@ -89,11 +110,12 @@ def build_mlp(arch, hidden_act="tanh", out_act="logistic", beta=1.0,
         init_scale=init_scale,
         seed=seed,
         weight_decay=weight_decay,
+        loss_name=loss_name,
     )
 
 
 def train_model(model, data, optimizer, max_epochs=100, batch_size=32,
-                early_stopping_patience=15, verbose=False, seed=None):
+                early_stopping_patience=15, verbose=False, seed=None, augment_fn=None):
     """seed: controla el orden de mini-batches (debería ser distinto por
     seed en multi-seed sweeps para no subestimar la varianza)."""
     rng = np.random.default_rng(seed)
@@ -109,7 +131,7 @@ def train_model(model, data, optimizer, max_epochs=100, batch_size=32,
     t0 = time.time()
     for epoch in range(1, max_epochs + 1):
         model.train_epoch(X_tr, Y_tr, optimizer, batch_size=batch_size,
-                          shuffle=True, rng=rng)
+                          shuffle=True, rng=rng, augment_fn=augment_fn)
         tr_pred = model.predict(X_tr)
         va_pred = model.predict(X_va)
         tr_loss = float(model._loss_fn(Y_tr, tr_pred))
