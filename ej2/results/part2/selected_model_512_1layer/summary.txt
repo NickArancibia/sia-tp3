@@ -1,0 +1,36 @@
+EJ2 — Modelo seleccionado [784, 512, 10] + ReLU + He
+Configuración: {'arch': [784, 512, 10], 'hidden_act': 'relu', 'lr': 0.001, 'optimizer': 'adam', 'batch_size': 32, 'init_scale': 0.1, 'initializer': 'he_normal', 'max_epochs': 150, 'patience': 20}
+Parámetros: 407,050
+Seeds: 5
+
+Resultados (mean ± std):
+  Test accuracy:  0.8659 ± 0.0046
+  Val accuracy:   0.9661 ± 0.0020
+  Macro F1:       0.8215 ± 0.0083
+  Weighted F1:    0.8253 ± 0.0080
+
+Per-class F1 (test):
+  Dígito 0: F1=0.9419±0.0037
+  Dígito 1: F1=0.9645±0.0069
+  Dígito 2: F1=0.9131±0.0076
+  Dígito 3: F1=0.8433±0.0261
+  Dígito 4: F1=0.9496±0.0030
+  Dígito 5: F1=0.8165±0.0204
+  Dígito 6: F1=0.9347±0.0102
+  Dígito 7: F1=0.9441±0.0068
+  Dígito 8: F1=0.0304±0.0568
+  Dígito 9: F1=0.8767±0.0142
+
+Top confusiones por dígito (matriz CM promedio):
+Real  | Acc clase | Top-1 confusión       | Top-2 confusión
+--------------------------------------------------------------------
+  0   |  0.992    | →6: 1 (0.4%)           | →7: 1 (0.4%)
+  1   |  0.989    | →3: 1 (0.4%)           | →5: 1 (0.4%)
+  2   |  0.954    | →0: 4 (1.5%)           | →7: 3 (1.2%)
+  3   |  0.984    | →2: 2 (0.8%)           | →5: 1 (0.4%)
+  4   |  0.971    | →9: 4 (1.6%)           | →2: 1 (0.4%)
+  5   |  0.870    | →3: 12 (5.4%)          | →6: 7 (3.1%)
+  6   |  0.971    | →0: 4 (1.7%)           | →1: 1 (0.4%)
+  7   |  0.953    | →2: 4 (1.6%)           | →3: 3 (1.2%)
+  8   |  0.016    | →3: 68 (28.0%)         | →5: 54 (22.2%)
+  9   |  0.928    | →4: 5 (2.0%)           | →7: 5 (2.0%)

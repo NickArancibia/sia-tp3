@@ -14,7 +14,10 @@ def initialize_layer(n_in, n_out=1, method="random_normal", scale=0.1, seed=42):
     """
     rng = np.random.default_rng(seed)
 
-    if method != "random_normal":
+    if method == "he_normal":
+        # He init: σ = sqrt(2 / fan_in). Recomendado para ReLU.
+        scale = float(np.sqrt(2.0 / n_in))
+    elif method != "random_normal":
         raise ValueError(f"Unknown initializer: {method}")
 
     if n_out == 1:
