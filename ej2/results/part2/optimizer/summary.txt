@@ -1,6 +1,0 @@
-Comparación de optimizadores (3 seeds):
-
-  momentum      : val=0.9390±0.0018  test=0.8253  elapsed=5.1s
-  adam          : val=0.9374±0.0035  test=0.8302  elapsed=11.8s
-  sgd_mini      : val=0.9192±0.0023  test=0.7669  elapsed=9.3s
-  gd_full       : val=0.4339±0.0139  test=0.3755  elapsed=8.3s
