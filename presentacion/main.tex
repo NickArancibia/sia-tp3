@@ -645,32 +645,30 @@
   patience=50, max\_epochs=500, init scale=0.1.
 \end{frame}
 
-\begin{frame}{Exp3 — Heatmap de test accuracy con \textbf{tanh}}
-  \fig{0.55}{../ej2/results/part2/two_layer_heatmap/test_acc_heatmap.png}
+\begin{frame}{Exp3 — Heatmap de val accuracy ($n_1 \times n_2$, ReLU)}
+  \fig{0.55}{../ej2/results/part2/two_layer_heatmap_relu/val_acc_heatmap.png}
   \scriptsize 5 seeds por celda. Cada cell: mean $\pm$ std.
-  Ganador con tanh: $(n_1, n_2) = (512, 512)$, test $= 0.8587 \pm 0.001$.
+  $n=0$ significa que esa capa no existe; los pares $(0, n)$ y $(n, 0)$
+  son el mismo MLP $[784, n, 10]$ y se computan una sola vez.
 \end{frame}
 
-\begin{frame}{Exp3 — Heatmap de test accuracy con \textbf{ReLU}}
-  \fig{0.55}{../ej2/results/part2/two_layer_heatmap_relu/test_acc_heatmap.png}
-  \scriptsize 1 seed por celda (std fijo $\pm 0.002$ para visualización).
-  Configuración idéntica al heatmap tanh excepto activación + init He.
-\end{frame}
-
-\begin{frame}{Exp3 — Lectura comparada (tanh vs ReLU)}
+\begin{frame}{Exp3 — Lectura del heatmap}
   \begin{itemize}
-    \item \textbf{Con tanh}: el ganador era $[784, 512, 512, 10]$ con
-      test $\sim$0.859. Wider $\succ$ deeper, capacidad ayuda hasta el
-      extremo del barrido.
-    \item \textbf{Con ReLU}: el ganador es $[784, 512, 10]$
-      (\textbf{1 sola capa oculta}) con test $\approx 0.869$. Agregar
-      una segunda capa NO mejora: $(512, 512)$ baja a $0.858$.
-    \item \textbf{Implicancia clave}: el ``ganador'' del barrido depende
-      de la activación. La conclusión ``más grande es mejor'' es
-      \emph{específica de tanh}; con ReLU una sola capa ancha alcanza.
-    \item \textbf{Decisión final}: para el modelo seleccionado optamos
-      por $[784, 512, 10]$ + ReLU + He init (mejor test del barrido,
-      arquitectura más simple).
+    \item Selección de hiperparámetros realizada sobre \textbf{val\_acc}
+      (no test) para evitar \emph{test set leakage}.
+    \item La zona top del barrido está prácticamente empatada en val
+      (diferencias de pocos milipuntos): la fila $n_1{=}0$ y la columna
+      $n_2{=}0$ junto a las celdas grandes muestran que con ReLU una
+      sola capa oculta de 256–512 neuronas alcanza el techo.
+    \item \textbf{Wider domina sobre deeper}: agregar una segunda
+      capa NO mejora consistentemente. La primera capa es la más
+      crítica porque procesa los 784 píxeles crudos.
+    \item \textbf{Decisión final}: para el modelo del equipo se eligió
+      $[784, 512, 10]$ + ReLU (1 sola capa oculta) — está dentro del
+      empate técnico de los top y es la arquitectura más simple,
+      menos propensa a overfit.
+    \item El test se evalúa una sola vez al final sobre el modelo ya
+      elegido (ver Exp5).
   \end{itemize}
 \end{frame}
 
@@ -899,577 +897,123 @@
 \end{frame}
 
 % =============================================================
-\subsection{EJ3 — Camino al 98\%: features + ensemble}
+\subsection{EJ3 — Camino al 98\%}
 
-\begin{frame}{¿Qué es ``feature engineering''?}
-  Dada una imagen de 28×28, lo más natural es pasarle al MLP el
-  \emph{vector aplanado de 784 pixels}. Pero el MLP tiene que
-  aprender DESDE CERO toda estructura útil de la imagen.
-  \vspace{0.5em}
-
-  \textbf{Feature engineering}: pre-calcular ``descriptores'' de la
-  imagen y dárselos al MLP \emph{además} de los pixels. La red ya no
-  arranca desde cero — empieza con info ya destilada.
-  \vspace{0.5em}
-
-  \textbf{Por qué puede ayudar}:
-  \begin{itemize}\setlength\itemsep{0.1em}
-    \item Algunos descriptores son \emph{difíciles} de aprender por un
-      MLP (ej. ``cuántos huecos tiene el dígito'' requiere análisis
-      no-local que un MLP de 2 capas no captura bien).
-    \item Acelera la convergencia: la red usa los pixels para los
-      detalles y los features para la macro-estructura.
-  \end{itemize}
-  \vspace{0.5em}
-
-  Inputs del modelo final: $784 + 56 + 7 + 5 + 324 = \mathbf{1176}$ features.
-\end{frame}
-
-\begin{frame}{Feature 1 --- Projection features (proj, 56)}
-  \textbf{Idea}: sumar los pixels por fila y por columna.
-  \[
-    \text{row}_i = \sum_{j=0}^{27} \text{img}[i, j],
-    \qquad
-    \text{col}_j = \sum_{i=0}^{27} \text{img}[i, j]
-  \]
-  Total: $28 + 28 = \mathbf{56}$ features.
-  \vspace{0.5em}
-
-  \textbf{Qué captura}: la \emph{silueta} del dígito.
-  \begin{itemize}
-    \item Un \textbf{1} concentra masa en el centro.
-    \item Un \textbf{0} tiene masa distribuida en todas las columnas.
-    \item Un \textbf{4} tiene una col vertical fuerte y una horizontal en el medio.
-  \end{itemize}
-  \vspace{0.3em}
-
-  \textbf{Lectura técnica}: es la base más simple del OCR
-  pre-deep-learning. Funciona pero aporta poco a un MLP que ya tiene
-  los pixels (puede inferirlas implícitamente en la primera capa).
-\end{frame}
-
-\begin{frame}[plain]
-  {\large\bfseries Projection --- ejemplo visual sobre un 8}
-  \figh{0.65}{figs/feat_projection.png}
-
-  {\scriptsize \textcolor{red!70!black}{Row sums} (derecha): tinta
-  vertical, dos picos en los bordes del 8 + valle en el medio.
-  \textcolor{blue!70!black}{Col sums} (abajo): tinta a izquierda y
-  derecha, mínimo en el centro.}
-\end{frame}
-
-\begin{frame}[plain]
-  {\large\bfseries Feature 2 --- Hu moments (hu, 7)}
-  \vspace{0.3em}
-
-  \textbf{Idea}: 7 invariantes estadísticos de la imagen, derivados de
-  los \emph{momentos centrales} normalizados.
-  \vspace{0.4em}
-
-  \textbf{Cómo se construyen} (Hu, 1962):
-  \begin{enumerate}\setlength\itemsep{0.1em}
-    \item Calcular momentos $m_{pq} = \sum_{x,y} x^p y^q\, \text{img}(x,y)$.
-    \item Centrar: $\mu_{pq} = \sum (x - \bar{x})^p (y - \bar{y})^q\, \text{img}$.
-    \item Normalizar: $\eta_{pq} = \mu_{pq} / \mu_{00}^{(p+q)/2 + 1}$.
-    \item Combinar los $\eta$ en 7 funciones específicas $h_1, \dots, h_7$.
+\begin{frame}{Cómo llegamos al 98\% — overview}
+  El baseline EJ3 (arquitectura grande $[784,256,128,10]$ + tanh)
+  llega a $\sim$95.5\%. Para superar el 98\% lo que faltaba era:
+  \begin{enumerate}\setlength\itemsep{0.2em}
+    \item \textbf{Activación ReLU} (en vez de tanh) — convergencia más
+      rápida y sin saturación.
+    \item \textbf{Arquitectura simple}: $[784, 512, 10]$ (1 sola capa
+      oculta), consistente con el ganador del heatmap ReLU del Exp3.
+    \item \textbf{Online augmentation}: por cada época y cada batch,
+      aplicar transformaciones aleatorias a las imágenes (rotación,
+      traslación). El modelo nunca ve dos veces el mismo input exacto.
+    \item \textbf{Weight decay} ($\lambda = 10^{-4}$) y
+      \textbf{learning rate más conservador} (Adam $\eta = 2\!\cdot\!10^{-4}$)
+      para evitar overfitting con un train chico.
   \end{enumerate}
-  \vspace{0.3em}
-
-  \textbf{Qué los hace útiles}: los $h_i$ son \textbf{invariantes a}:
-  Translación (vía centroide), Escala (vía $\mu_{00}$), Rotación
-  (combinaciones específicas).
-
-  \textbf{Lectura técnica}: capturan ``forma global''. Útiles en OCR
-  clásico, menos en MNIST porque los dígitos NO son invariantes a
-  rotación (un 6 rotado 180° es un 9).
-\end{frame}
-
-\begin{frame}[plain]
-  {\large\bfseries Hu --- ejemplo visual sobre un 8 (con fórmulas)}
-  \figh{0.7}{figs/feat_hu.png}
-
-  {\scriptsize Cada $h_i$ es una fórmula \emph{distinta} de los
-  $\eta_{pq}$. El truco está en la combinación específica: cada $h_i$
-  resulta invariante a alguna transformación. Los valores son
-  log-transformados para evitar números muy chicos/grandes.}
-\end{frame}
-
-\begin{frame}[plain]
-  {\large\bfseries ¿Qué son los $\eta_{pq}$? --- el bloque de construcción}
-  \vspace{0.3em}
-
-  Los $h_i$ se arman a partir de los \textbf{momentos centrales
-  normalizados} $\eta_{pq}$. Vienen en 3 pasos:
-
-  \textbf{1) Momentos crudos}:
-  \[
-    m_{pq} = \sum_{x, y} x^p \, y^q \, \text{img}(x, y)
-  \]
-  Ej.\ $m_{00}$ = masa total. $m_{10}/m_{00} = \bar{x}$ (centroide).
-
-  \textbf{2) Momentos centrales} --- restando el centroide:
-  \[
-    \mu_{pq} = \sum_{x, y} (x - \bar{x})^p \, (y - \bar{y})^q \, \text{img}(x, y)
-  \]
-  Esto los hace \emph{invariantes a translación}.
-
-  \textbf{3) Normalización por escala}:
-  \[
-    \eta_{pq} = \frac{\mu_{pq}}{\mu_{00}^{(p+q)/2 + 1}}
-  \]
-  El exponente del denominador hace que $\eta_{pq}$ sea \emph{invariante
-  a escala}.
-\end{frame}
-
-\begin{frame}{¿Qué captura cada $h_i$? --- intuición}
-  Las 7 fórmulas de Hu son \emph{combinaciones específicas} de los
-  $\eta_{pq}$ pensadas para que cada una sea \textbf{invariante a
-  rotación} además de translación y escala.
-  \vspace{0.5em}
-
-  \scriptsize
-  \begin{center}
-  \begin{tabular}{l|l|l}
-    \toprule
-    Hu & Captura & Intuición \\
-    \midrule
-    $h_1 = \eta_{20} + \eta_{02}$ & spread & cuán esparcida está la tinta \\
-    $h_2 = (\eta_{20}-\eta_{02})^2 + 4\eta_{11}^2$ & elongación & alargado vs.\ circular \\
-    $h_3$ (cúbica) & asimetría 1 & sesgo en una dirección \\
-    $h_4$ (cúbica) & asimetría 2 & sesgo en otra dirección \\
-    $h_5, h_6$ (mixtas) & combinaciones más finas & detalles de forma \\
-    $h_7$ (chiralidad) & sentido de rotación & distingue figuras \emph{espejadas} \\
-    \bottomrule
-  \end{tabular}
-  \end{center}
-  \normalsize
-  \vspace{0.5em}
-
-  \textbf{Por qué importa la invariancia}: Hu sobre un 8 rotado 30° o
-  el doble de grande da \emph{los mismos valores}. Útil en OCR clásico
-  pero marginal en MNIST (6 rotado 180° es un 9, no es lo mismo).
-\end{frame}
-
-\begin{frame}{Feature 3 --- Topológicos (topo, 5)}
-  \textbf{Idea}: features derivadas de la \emph{estructura topológica}
-  de la imagen binarizada.
   \vspace{0.4em}
-
-  \textbf{Las 5 features} (binarización con threshold 0.3):
-  \begin{enumerate}\setlength\itemsep{0.1em}
-    \item \textbf{Cantidad de huecos}: regiones de fondo NO conectadas
-      al borde. \emph{0/6/9 → 1 hueco; 8 → 2 huecos; 1/2/3/4/5/7 → 0}.
-    \item \textbf{Euler number}: $\#$componentes $-$ $\#$huecos.
-    \item \textbf{Endpoints} en el esqueleto: pixels con 1 vecino
-      (puntas del trazo). \emph{1 tiene 2 endpoints}.
-    \item \textbf{Branch points}: pixels con $\geq 3$ vecinos
-      (intersecciones).
-    \item \textbf{Densidad}: fracción de pixels activos.
-  \end{enumerate}
-  \vspace{0.3em}
-
-  \textbf{Por qué es valioso}: esta info es \emph{difícil} para un MLP
-  porque requiere análisis no-local. Aporta señal NUEVA que los
-  pixels y proj no proveen.
+  \textbf{Sin necesidad de}: feature engineering manual (HOG, momentos
+  de Hu, etc.), regularización por noise, dropout o ensemble.
+  Demuestra que la elección correcta de arquitectura + augmentation
+  puede llevar a un MLP simple a 98\%.
 \end{frame}
 
-\begin{frame}[plain]
-  {\large\bfseries ¿Qué es un ``vecino''? Concepto + ejemplos}
-  \vspace{0.2em}
-
-  {\small Cada pixel en una imagen 2D tiene hasta \textbf{8 vecinos}: los
-  8 pixels que lo rodean en una ventana 3×3. Después de
-  \emph{esqueletizar} (reducir el trazo a 1 pixel de ancho),
-  contamos cuántos vecinos del esqueleto tiene cada pixel:}
-  \figh{0.5}{figs/feat_topo_neighbors.png}
-
-  \vspace{-0.3em}
-  {\scriptsize\setlength\itemsep{0.05em}
-  \begin{itemize}
-    \item \textcolor{green!50!black}{\textbf{1 vecino}} = \textbf{endpoint}: punta de un trazo.
-    \item \textbf{2 vecinos} = interior de una línea (el trazo pasa por ahí).
-    \item \textcolor{blue}{\textbf{3+ vecinos}} = \textbf{branch}: una intersección donde varias líneas se juntan.
-  \end{itemize}}
-\end{frame}
-
-\begin{frame}[plain]
-  {\large\bfseries Branch real en el 8 --- zoom para verlo}
-  \vspace{0.2em}
-
-  \figh{0.55}{figs/feat_topo_branch_zoom.png}
-
-  {\scriptsize El pixel azul (centro del círculo rojo) tiene
-  \textbf{4 vecinos del esqueleto} en su entorno 3×3 (cuadro punteado
-  rojo): los 4 pixels marrones contiguos. Por eso califica como
-  \emph{branch}. Es el punto donde los dos lóbulos del 8 se conectan.}
-\end{frame}
-
-\begin{frame}[plain]
-  {\large\bfseries Topológicos --- ejemplo visual sobre un 8}
-  \figh{0.55}{figs/feat_topological.png}
-
-  {\scriptsize Izquierda: \textcolor{red}{huecos} en rojo (este 8
-  tiene 1 hueco al binarizar; los dos lóbulos del 8 quedaron
-  conectados al binarizar con thr=0.3). Centro: imagen
-  \textcolor{gray}{binarizada} + valor de densidad. Derecha: el
-  \textcolor{orange!80!black}{\textbf{esqueleto}} en marrón, con
-  \textcolor{green!50!black}{endpoints en verde} y
-  \textcolor{blue}{branches en azul}.}
-\end{frame}
-
-\begin{frame}[plain]
-  {\large\bfseries Las 3 ``capas'' de la imagen topológica --- traducción}
-  \vspace{0.4em}
-
-  {\small Cuando mirás el panel derecho (el del esqueleto), aparecen
-  hasta 4 colores. Acá los traducimos:}
-  \vspace{0.4em}
-
-  \begin{center}
-  \begin{tabular}{l|l}
-    \toprule
-    Color & Qué es \\
-    \midrule
-    \textcolor{gray}{\textbf{gris claro}} & Pixels \emph{binarizados} (la tinta del 8 después de threshold). \\
-    \textcolor{orange!80!black}{\textbf{marrón}} & El \emph{esqueleto}: el trazo reducido a 1 pixel de ancho. \\
-    \textcolor{blue}{\textbf{azul}} & \emph{Branch points}: pixels del esqueleto con $\geq 3$ vecinos. \\
-    \textcolor{green!50!black}{\textbf{verde}} & \emph{Endpoints}: pixels del esqueleto con 1 vecino. \\
-    \bottomrule
-  \end{tabular}
-  \end{center}
-  \vspace{0.5em}
-
-  \textbf{¿Por qué en este 8 NO hay verde?} El 8 no tiene ``puntas''
-  ---son dos lóbulos cerrados. Por lo tanto el esqueleto no tiene
-  pixels con 1 solo vecino. Compará: un 1 sí tendría 2 endpoints
-  (arriba y abajo); un 7 también.
-\end{frame}
-
-\begin{frame}[plain]
-  {\large\bfseries Feature 4 --- HOG (Histogram of Oriented Gradients, 324)}
-  \vspace{0.3em}
-
-  \textbf{Idea} (Dalal \& Triggs, 2005): describir la imagen por la
-  \emph{distribución de orientaciones de gradiente} en celdas locales.
-  \vspace{0.4em}
-
-  \textbf{Cómo se construye}:
-  \begin{enumerate}\setlength\itemsep{0.1em}
-    \item Calcular gradientes $G_x, G_y$ en cada pixel (ej. Sobel).
-    \item Computar magnitud $|G|$ y orientación $\theta$ por pixel.
-    \item Dividir la imagen en \emph{cells} (ej. $7\times 7$ pixels).
-    \item En cada cell: histograma de orientaciones (9 bins entre 0°
-      y 180°), pesando por la magnitud.
-    \item Agrupar cells en \emph{blocks} ($2\times 2$ cells), normalizar
-      cada block (L2-Hys).
-  \end{enumerate}
-  \vspace{0.3em}
-
-  Para 28×28 con cells de 7 px y blocks 2×2: $3\times 3$ blocks $\times$
-  4 cells/block $\times$ 9 orient $= \mathbf{324}$ features.
-\end{frame}
-
-\begin{frame}[plain]
-  {\large\bfseries HOG paso 1 --- ¿qué es un ``gradiente''?}
-  \vspace{0.2em}
-
-  {\small Un \textbf{gradiente} mide cuánto cambia el brillo de un pixel
-  al moverse en una dirección. Detecta \emph{bordes}: si dos pixels
-  vecinos son muy distintos, el gradiente ahí es alto.}
-
-  {\scriptsize Para cada pixel calculamos $G_x$ (cambio horizontal) y
-  $G_y$ (cambio vertical) con kernels Sobel:
-  $G_x = \bigl[\begin{smallmatrix}-1 & 0 & 1\\ -2 & 0 & 2\\ -1 & 0 & 1\end{smallmatrix}\bigr] * \text{img}$,
-  \;
-  $G_y = \bigl[\begin{smallmatrix}-1 & -2 & -1\\ 0 & 0 & 0\\ 1 & 2 & 1\end{smallmatrix}\bigr] * \text{img}$.
-  \;De ahí: magnitud $= \sqrt{G_x^2 + G_y^2}$, ángulo $= \arctan(G_y/G_x)$.}
-  \figh{0.55}{figs/feat_hog_gradients.png}
-\end{frame}
-
-\begin{frame}[plain]
-  {\large\bfseries HOG paso 2 --- de gradientes a histograma por cell}
-  \vspace{0.2em}
-
-  {\small Ahora agrupamos: dividimos la imagen en \textbf{cells} de 7×7
-  pixels (queda una grilla 4×4 de cells). Por cada cell hacemos un
-  \emph{histograma} de las orientaciones que tienen los pixels adentro,
-  ponderando cada voto por la magnitud del gradiente:}
-  \figh{0.5}{figs/feat_hog_cells.png}
-
-  {\scriptsize Resultado: cada cell aporta \textbf{9 valores} (uno por
-  bin de orientación). Total: $4{\times}4{\times}9 = 144$ valores por
-  imagen \emph{antes} de normalizar por block.}
-\end{frame}
-
-\begin{frame}[plain]
-  {\large\bfseries HOG paso 3 --- normalización por block + total}
-  \vspace{0.2em}
-
-  {\small Las celdas se agrupan en \textbf{blocks} de $2{\times}2$ cells
-  (con \emph{overlap}: cada cell pertenece a varios blocks). El
-  histograma de cada block se \textbf{normaliza} (L2-Hys) para que el
-  vector total sea robusto a cambios de iluminación / contraste.}
-  \vspace{0.5em}
-
-  {\small Para 28×28 con cells 7×7 y blocks 2×2:}
-  \begin{itemize}\setlength\itemsep{0.05em}
-    \item Cells totales: $4{\times}4 = 16$
-    \item Blocks 2×2 con stride 1: $3{\times}3 = 9$ blocks
-    \item Por block: $2{\times}2$ cells $\times$ 9 orient $= 36$ valores
-    \item Total: $9 \times 36 = \mathbf{324}$ features
-  \end{itemize}
-  \vspace{0.5em}
-
-  {\small \textbf{La intuición clave}: HOG codifica ``en cada zona local de
-  la imagen, ¿qué orientaciones de borde predominan?''. Los dígitos
-  tienen patrones de bordes muy distintivos por zona — un 1 es casi
-  todo vertical en el centro; un 0 es circular; un 7 tiene una
-  horizontal arriba y una diagonal bajando.}
-\end{frame}
-
-\begin{frame}[plain]
-  {\large\bfseries HOG --- ejemplo visual sobre un 8}
-  \figh{0.65}{figs/feat_hog.png}
-
-  {\scriptsize Cada celda 7×7 tiene un histograma de orientaciones de
-  gradiente representado como ``estrellas'' (longitud = peso de esa
-  orientación). Se ve la forma del 8 en los bordes (gradientes
-  fuertes en la silueta).}
-\end{frame}
-
-\begin{frame}[plain]
-  {\large\bfseries Data augmentation --- generar samples sintéticos}
-  \vspace{0.3em}
-
-  \textbf{Idea}: aplicar transformaciones \emph{conservadoras} a las
-  imágenes del train para crear ``copias'' que la red trate como
-  samples nuevos.
+\begin{frame}{Online augmentation — la pieza clave}
+  \textbf{Idea}: en cada época y cada batch, transformar las imágenes
+  del train con perturbaciones aleatorias \emph{antes} de pasarlas al
+  modelo. El modelo ``ve'' versiones distintas del mismo dígito en
+  cada paso de entrenamiento.
   \vspace{0.4em}
 
   \textbf{Transformaciones que usamos}:
-  \begin{itemize}
-    \item \textbf{Rotación}: ángulo aleatorio en $[-5°, +5°]$
-      (\texttt{scipy.ndimage.rotate}).
-    \item \textbf{Traslación}: shift aleatorio en $\{-2, ..., +2\}$
-      pixels en cada eje (\texttt{scipy.ndimage.shift}).
+  \begin{itemize}\setlength\itemsep{0.1em}
+    \item \textbf{Rotación} aleatoria en un rango pequeño.
+    \item \textbf{Traslación} aleatoria de pocos píxeles.
   \end{itemize}
-  \vspace{0.4em}
-
-  \textbf{Para qué sirve}: reduce overfitting (la red ve ``más datos''
-  efectivos), hace al modelo invariante a esos cambios pequeños, y
-  \emph{especialmente} útil para clases minoritarias: oversampling con
-  augmentation balancea las clases sin duplicar datos idénticos.
-  \vspace{0.4em}
-
-  \textbf{En EJ3 lo usamos así}: cap @ 1000 + oversample las clases 5
-  y 8 hasta 1000 cada una usando rotación + traslación aleatorias.
-\end{frame}
-
-\begin{frame}[plain]
-  {\large\bfseries Augmentation --- ejemplo visual sobre un 8}
-  \figh{0.65}{figs/feat_augmentation.png}
-
-  {\scriptsize Cada imagen es una rotación + traslación aleatoria del
-  mismo 8 original. La red aprende a ser invariante a esos cambios y
-  la clase minoritaria se multiplica sin necesitar más datos reales.}
-\end{frame}
-
-\begin{frame}[plain]
-  {\large\bfseries Balance de clases --- cap + oversample con aug}
-  \vspace{0.3em}
-
-  \textbf{Problema}: el train EJ3 tiene 3.7× más 1s que 5s. La red
-  aprende ``hay muchos 1s, ante la duda voy con 1''.
-  \vspace{0.4em}
-
-  \textbf{Estrategia que usamos}:
-  \begin{enumerate}\setlength\itemsep{0.1em}
-    \item \textbf{Cap}: si una clase tiene más de 1000 samples,
-      reducimos al azar a 1000.
-    \item \textbf{Split} 80/20 estratificado en train/val.
-    \item \textbf{Oversample con augmentation}: las clases 5 y 8
-      se completan hasta 800 generando \emph{copias} con rotación +
-      traslación aleatoria.
-  \end{enumerate}
-  \vspace{0.4em}
-
-  \textbf{Resultado}: dataset balanceado de $\sim$8.000 samples
-  (800 por clase) en lugar de 12.597 con desbalance original.
-  Val NO se augmenta (evita data leakage).
-\end{frame}
-
-\begin{frame}[fragile,plain]
-  {\large\bfseries Noise per-epoch --- regularización por perturbación}
-  \vspace{0.2em}
-
-  \textbf{Idea}: en cada época, agregar ruido gaussiano al input antes
-  de entrenar. El ruido se \emph{regenera} cada época, así la red
-  ve un train ligeramente distinto cada vez.
-  \[
-    X_{\text{epoch}} = X_{\text{train}} + \mathcal{N}(0, \sigma^2),
-    \quad \sigma = 0.1
-  \]
-  \vspace{-0.3em}
-
-  Pero el val/test se evalúa SIEMPRE sobre datos limpios.
-\begin{lstlisting}
-for epoch in range(max_epochs):
-    noise = rng.normal(0, sigma, X_train.shape)
-    X_noisy = X_train + noise
-    model.train_epoch(X_noisy, Y_train, ...)
-    val_acc = evaluate(model, X_val_clean)  # <- clean!
-\end{lstlisting}
-
-  {\small \textbf{Por qué funciona}: fuerza al modelo a NO memorizar pixels
-  específicos --- tiene que aprender la \emph{forma}.
-  \textbf{Aporte en EJ3}: \textbf{+0.48 pts} test (la regularización más
-  efectiva sola).}
-\end{frame}
-
-\begin{frame}[plain]
-  {\large\bfseries Noise --- ejemplo visual sobre un 8}
-  \figh{0.55}{figs/feat_noise.png}
-
-  {\scriptsize Con $\sigma = 0.1$ (lo que usamos en EJ3) la imagen sigue
-  reconocible pero los pixels individuales ya no son exactos. La red
-  se enfoca en la \emph{forma}, no en valores específicos.}
-\end{frame}
-
-\begin{frame}[plain]
-  {\large\bfseries Dropout --- qué es, por qué lo probamos, por qué lo descartamos}
-  \vspace{0.2em}
-
-  \textbf{Idea} (Srivastava et al., 2014): durante el training, ``apagar''
-  aleatoriamente una fracción $p$ de las neuronas en cada batch.
-  \vspace{0.3em}
-
-  \textbf{Inverted dropout} (la versión que implementamos):
-  \[
-    V'_j = V_j \cdot \mathbf{1}[u_j > p] / (1-p),
-    \quad u_j \sim \text{Uniform}(0, 1)
-  \]
-  Aplicado solo en \emph{training}, sólo en \emph{capas ocultas}.
-  En inference: $V'_j = V_j$ (sin máscara).
-
-  {\small \textbf{Por qué funciona en general}: cada neurona no puede
-  ``confiar'' en sus vecinas $\to$ aprende features útiles por sí sola.
-  Equivale a entrenar un \emph{ensemble} implícito.}
-
-  \textbf{En EJ3 NO funcionó}:
-  \begin{itemize}\setlength\itemsep{0.05em}
-    \item Combo + drop 0.5: test=0.9644 ($-0.28$ pts).
-    \item Combo + drop 0.3: test=0.9636 ($-0.36$ pts).
-  \end{itemize}
-  {\scriptsize Diagnóstico: el noise per-epoch \emph{ya} regulariza lo
-  mismo que daría dropout. Sumarlos \emph{underfittea} sin agregar info.}
-\end{frame}
-
-\begin{frame}{Ensemble --- promediar varios modelos}
-  \textbf{Idea}: entrenar $K$ versiones del modelo con seeds distintas
-  (cada una explora un mínimo local distinto), y combinar sus
-  predicciones.
-  \vspace{0.4em}
-
-  \textbf{Cómo combinar} (lo que usamos):
-  $\bar{y} = \frac{1}{K} \sum_k y^{(k)}$, después \texttt{argmax}.
-  Alternativa: voting (cada modelo vota \texttt{argmax}, se elige la moda).
   \vspace{0.4em}
 
   \textbf{Por qué funciona}:
   \begin{itemize}\setlength\itemsep{0.1em}
-    \item Cada seed converge a un mínimo distinto (cada uno con sus
-      sesgos).
-    \item Los errores tienden a ser \emph{independientes} entre
-      modelos.
-    \item El promedio cancela errores correlados negativamente.
+    \item Reduce el overfitting: el dataset efectivo es muchísimo
+      más grande.
+    \item Hace al modelo \emph{invariante} a esos cambios pequeños.
+    \item Ayuda especialmente a clases minoritarias (5, 8): cada época
+      ven nuevas variantes de las mismas pocas muestras.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Augmentation — ejemplo visual sobre un 8}
+  \figh{0.65}{figs/feat_augmentation.png}
+
+  {\scriptsize Cada imagen es una rotación + traslación aleatoria del
+  mismo 8 original. La red ve algo distinto cada batch.}
+\end{frame}
+
+\begin{frame}{Modelo final — configuración}
+  \begin{itemize}
+    \item \textbf{Arquitectura}: \texttt{[784, 512, 10]}
+      (1 capa oculta, $\sim$407k parámetros).
+    \item \textbf{Activación oculta}: \textbf{ReLU} + init He.
+      \textbf{Salida}: sigmoide.
+    \item \textbf{Optimizador}: Adam con
+      $\eta = 2\!\cdot\!10^{-4}$, $\beta_1=0.9$, $\beta_2=0.999$.
+    \item \textbf{Batch size}: 64.
+    \item \textbf{Regularización}: weight decay $\lambda = 10^{-4}$.
+    \item \textbf{Online augmentation}: rotación + traslación
+      aleatorias en cada batch, en cada época.
+    \item \textbf{Train}: \texttt{more\_digits.csv} (15.7k muestras,
+      las 10 clases incluyendo el 8).
+    \item \textbf{Test}: \texttt{digits\_test.csv} (mismo del EJ2).
   \end{itemize}
   \vspace{0.4em}
 
-  \textbf{En EJ3}: con 3 seeds del iter10 (combo + topo + HOG),
-  pasamos de $\sim$97.5\% (mejor single) a \textbf{98.08\%}
-  ($\mathbf{+0.5}$ pts). \emph{Es lo que cerró el gap al 98\%}.
-\end{frame}
-
-\begin{frame}{Trayectoria de iteraciones --- todo el camino}
-  \scriptsize
-  \begin{center}
-  \begin{tabular}{r|l|c|c}
-    \toprule
-    Iter & Cambio respecto al anterior & test\_acc & $\Delta$ \\
-    \midrule
-    0 & Baseline (tanh, Adam, L2) & 0.9624 & --- \\
-    1 & + balance + ReLU + aug & 0.9644 & +0.20 \\
-    2 & + features (proj + Hu) & 0.9640 & +0.16 \\
-    3 & + noise per-epoch & 0.9672 & +0.48 \\
-    4 & ReLU sola (sin combo) & 0.9624 & +0.00 \\
-    5 & combo (1+2+3) & 0.9672 & empate \\
-    6 & combo + dropout 0.5 & 0.9644 & $-0.28$ \\
-    7a & combo + dropout 0.3 & 0.9636 & $-0.36$ \\
-    7b & combo + drop 0.3, sin noise & 0.9652 & $-0.20$ \\
-    8 & cap train\_acc=0.99 (early) & 0.9511 & $-1.61$ \\
-    9 & combo + topo & 0.9692 & +0.20 \\
-    10 & combo + topo + HOG & 0.9756 & +0.64 \\
-    \textbf{11} & \textbf{ensemble 3 seeds del iter10} & \textbf{0.9808} & \textbf{+0.52} \\
-    \bottomrule
-  \end{tabular}
-  \end{center}
-  \vspace{0.4em}
-  \normalsize
-
-  \textbf{Total}: \textbf{+1.84 pts} desde el baseline (96.24\% $\to$ 98.08\%).
-
-  \textbf{Lo que más aportó}: HOG (+0.64), Ensemble (+0.52), Noise (+0.48).
-
-  \textbf{Lo que NO funcionó}: Dropout, ReLU sola, cortar épocas pronto.
-\end{frame}
-
-\begin{frame}{El modelo final --- anatomía completa}
-  \textbf{Arquitectura}: \texttt{[1176, 512, 512, 10]}, $\sim$870k params.
-
-  \textbf{Input} (1176 features):
-  \begin{itemize}\setlength\itemsep{0.05em}
-    \item 784 pixels crudos
-    \item 56 projection features (row\_sums + col\_sums)
-    \item 7 Hu moments
-    \item 5 topological features (huecos, Euler, endpts, branches, density)
-    \item 324 HOG features
+  \textbf{Resultado evaluado sobre el test set}:
+  \begin{itemize}
+    \item \textbf{Test accuracy}: $\mathbf{0.9840}$
+    \item \textbf{Macro F1}: $\mathbf{0.9839}$
   \end{itemize}
-  \vspace{0.3em}
-
-  \textbf{Activación}: ReLU oculta + sigmoide salida. \textbf{Init}: He.
-
-  \textbf{Optimizador}: Adam lr=5e-4, $\beta_1{=}0.9$, $\beta_2{=}0.999$.
-
-  \textbf{Regularización}: L2 ($\lambda=10^{-4}$) + noise per-epoch ($\sigma=0.1$,
-  solo sobre los 784 pixels) + cap@1000 + oversample con augmentation
-  para 5 y 8.
-
-  \textbf{Training}: batch=32, max\_ep=500, patience=50.
-
-  \textbf{Ensemble}: 3 modelos con seeds 0, 1, 2. Predicción final =
-  \texttt{argmax(mean(salidas\_sigmoide))}.
-
-  \textbf{Resultado}: test\_acc = \textbf{0.9808}, macro\_F1 = 0.9807,
-  per-class F1 todos $\geq 0.97$ (incluido el 8: 0.971).
 \end{frame}
 
-\begin{frame}{Per-class F1 final (test EJ3)}
+\begin{frame}{Modelo final — curvas de aprendizaje}
+  \begin{columns}
+    \begin{column}{0.5\linewidth}
+      \fig{1.0}{../ej3/results/onlineaug_relu_512_adam_lr2e-4_bs64_wd1e-4/loss_curve.png}
+    \end{column}
+    \begin{column}{0.5\linewidth}
+      \fig{1.0}{../ej3/results/onlineaug_relu_512_adam_lr2e-4_bs64_wd1e-4/accuracy_curve.png}
+    \end{column}
+  \end{columns}
+  \scriptsize El modelo converge suave y estable. La augmentation evita
+  que train\_acc dispare por encima del val\_acc (control natural del
+  overfitting).
+\end{frame}
+
+\begin{frame}{Modelo final — matriz de confusión (test)}
+  \fig{0.55}{../ej3/results/onlineaug_relu_512_adam_lr2e-4_bs64_wd1e-4/confusion_matrix.png}
+  \scriptsize Diagonal dominante en todas las clases. El dígito 8
+  (que era 0 en EJ2) ahora se clasifica correctamente.
+\end{frame}
+
+\begin{frame}{Modelo final — per-class F1 (test)}
   \scriptsize
   \begin{center}
   \begin{tabular}{c|c|c}
     \toprule
-    Clase & F1 baseline EJ3 & F1 final EJ3 (ensemble) \\
+    Clase & F1 baseline EJ2 & F1 final EJ3 \\
     \midrule
-    0 & 0.94 & \textbf{0.986} \\
-    1 & 0.95 & \textbf{0.991} \\
-    2 & 0.89 & \textbf{0.971} \\
-    3 & 0.84 & \textbf{0.984} \\
-    4 & 0.89 & \textbf{0.988} \\
+    0 & 0.94 & \textbf{0.992} \\
+    1 & 0.95 & \textbf{0.993} \\
+    2 & 0.89 & \textbf{0.979} \\
+    3 & 0.84 & \textbf{0.988} \\
+    4 & 0.89 & \textbf{0.992} \\
     \textcolor{red!70!black}{5} & \textcolor{red!70!black}{0.75} & \textcolor{green!50!black}{\textbf{0.982}} \\
-    6 & 0.91 & \textbf{0.983} \\
+    6 & 0.91 & \textbf{0.981} \\
     7 & 0.92 & \textbf{0.977} \\
-    \textcolor{red!70!black}{8} & \textcolor{red!70!black}{\textbf{0.00}} & \textcolor{green!50!black}{\textbf{0.971}} \\
-    9 & 0.92 & \textbf{0.974} \\
+    \textcolor{red!70!black}{8} & \textcolor{red!70!black}{\textbf{0.00}} & \textcolor{green!50!black}{\textbf{0.977}} \\
+    9 & 0.92 & \textbf{0.978} \\
     \bottomrule
   \end{tabular}
   \end{center}
@@ -1477,13 +1021,14 @@ for epoch in range(max_epochs):
   \normalsize
 
   \begin{itemize}\setlength\itemsep{0.1em}
-    \item El 8 pasó de F1=\textbf{0} (imposible) a 0.971 — gracias a
-      \texttt{more\_digits.csv}.
-    \item El 5 (que era el más débil del baseline EJ3) saltó de 0.75 a
-      0.982 — gracias al balance + augmentation + HOG.
-    \item Todas las clases con F1 $\geq$ 0.97. Modelo equilibrado.
+    \item El \textbf{8} pasa de F1=$\mathbf{0}$ (imposible en EJ2,
+      ausente del train) a $\mathbf{0.977}$.
+    \item El \textbf{5} (clase minoritaria) sube de $0.75$ a
+      $\mathbf{0.982}$.
+    \item Todas las clases con F1 $\geq 0.977$ — modelo equilibrado.
   \end{itemize}
 \end{frame}
+
 
 % =============================================================
 \section{Conclusiones}
